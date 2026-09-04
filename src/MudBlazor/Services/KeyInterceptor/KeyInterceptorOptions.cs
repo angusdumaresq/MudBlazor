@@ -22,6 +22,16 @@ public sealed class KeyInterceptorOptions
     public string? TargetClass { get; init; }
 
     /// <summary>
+    /// Handles only keyboard events raised by the subscribed element itself, ignoring events which bubble up from its descendants.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <c>false</c>. Set this for a focusable container which manages a virtual cursor (for example through <c>aria-activedescendant</c>),
+    /// so that an input or button rendered inside the container keeps its own keyboard behavior when it has focus.
+    /// Ignored when <see cref="TargetClass"/> is set.
+    /// </remarks>
+    public bool IgnoreDescendantEvents { get; init; }
+
+    /// <summary>
     /// Specifies whether resize events should be logged in the browser's console.
     /// </summary>
     public bool EnableLogging { get; init; }

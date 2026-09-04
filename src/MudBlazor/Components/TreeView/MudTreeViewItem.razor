@@ -1,10 +1,18 @@
-@namespace MudBlazor
+﻿@namespace MudBlazor
 @inherits MudComponentBase
 @typeparam T
 
-@if (Visible)
+@if (IsVirtualizedItem || Visible)
 {
-    <li @attributes="UserAttributes" class="@Classname" style="@Style">
+    <li role="@(IsVirtualizedItem ? "treeitem" : null)"
+        aria-level="@(IsVirtualizedItem ? (int?)(CurrentItemContext!.Depth + 1) : null)"
+        aria-posinset="@(IsVirtualizedItem ? (int?)CurrentItemContext!.PositionInSet : null)"
+        aria-setsize="@(IsVirtualizedItem ? (int?)CurrentItemContext!.SetSize : null)"
+        aria-expanded="@GetAriaExpanded()"
+        aria-selected="@GetAriaSelected()"
+        aria-checked="@GetAriaChecked()"
+        aria-disabled="@(IsVirtualizedItem && GetDisabled() ? "true" : null)"
+        @attributes="UserAttributes" id="@GetItemElementId()" class="@Classname" style="@Stylename">
         <div class="@ContentClassname" @onclick="OnItemClickedAsync" @onclick:stopPropagation="true" @ondblclick="OnItemDoubleClickedAsync" @ondblclick:stopPropagation="true">
             @if (Content != null)
             {
@@ -12,12 +20,13 @@
             }
             else
             {
-                <MudTreeViewItemToggleButton Disabled="@GetDisabled()" Loading="_loading" Expanded="_expandedState.Value" ExpandedChanged="OnItemExpanded" Visible="@(HasChildren() && AreChildrenVisible())" ExpandedIcon="@ExpandButtonIcon" ExpandedIconColor="@ExpandButtonIconColor" LoadingIcon="@LoadingIcon" LoadingIconColor="LoadingIconColor"></MudTreeViewItemToggleButton>
+                <MudTreeViewItemToggleButton Disabled="@GetDisabled()" Loading="@GetServerDataLoading()" Expanded="GetExpanded()" ExpandedChanged="OnItemExpanded" Visible="@HasVisibleChildren()" ExpandedIcon="@ExpandButtonIcon" ExpandedIconColor="@ExpandButtonIconColor" LoadingIcon="@LoadingIcon" LoadingIconColor="LoadingIconColor"></MudTreeViewItemToggleButton>
 
                 @if (MultiSelection)
                 {
                     <MudCheckBox T="bool?" TriState Class="mud-treeview-item-checkbox" CheckedIcon="@CheckedIcon" UncheckedIcon="@UncheckedIcon" IndeterminateIcon="@GetIndeterminateIcon()"
-                                 @bind-Value:get="GetCheckBoxStateTriState()" @bind-Value:set="@(x => OnCheckboxChangedAsync())" Disabled="@GetDisabled()" ReadOnly="@GetReadOnly()"></MudCheckBox>
+                                 @bind-Value:get="GetCheckBoxStateTriState()" @bind-Value:set="@(x => OnCheckboxChangedAsync())" Disabled="@GetDisabled()" ReadOnly="@GetReadOnly()"
+                                 KeyboardEnabled="@(!IsVirtualizedItem)" tabindex="@(IsVirtualizedItem ? "-1" : null)" aria-hidden="@(IsVirtualizedItem ? "true" : null)"></MudCheckBox>
                 }
 
                 @if (HasIcon)
@@ -53,7 +62,7 @@
                 }
             }
         </div>
-        @if (HasChildren())
+        @if (HasChildren() && !IsVirtualizedItem)
         {
             <MudCollapse Expanded="@_expandedState.Value">
                 <CascadingValue Value="@MudTreeRoot" IsFixed="true">

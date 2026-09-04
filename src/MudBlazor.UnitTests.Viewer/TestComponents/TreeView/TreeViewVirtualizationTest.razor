@@ -1,0 +1,343 @@
+﻿<MudTreeView @ref="_treeView" T="string" Items="_treeItems" Virtualize="@Virtualize" Height="@Height" MaxHeight="@MaxHeight" Dense="@Dense"
+             SelectionMode="@SelectionMode" SelectedValue="@SelectedValue" SelectedValueChanged="OnSelectedValueChangedAsync" SelectedValues="@SelectedValues" SelectedValuesChanged="OnSelectedValuesChangedAsync" AutoSelectParent="@AutoSelectParent"
+             AutoExpand="@AutoExpand" ItemSize="@ItemSize" OverscanCount="@OverscanCount" MaxItemCount="@MaxItemCount"
+             ExpandOnClick="@ExpandOnClick" Disabled="@Disabled" @attributes="TreeAttributes">
+    <ItemTemplate>
+        @if (BindExpanded)
+        {
+            <MudTreeViewItem Expanded="@context.Expanded" ExpandedChanged="expanded => OnItemExpandedChangedAsync(context, expanded)" Selected="@context.Selected" SelectedChanged="selected => OnItemSelectedChangedAsync(context, selected)" Disabled="@IsItemDisabled(context)"
+                             Items="@context.Children" Value="@context.Value" Text="@context.Text" @attributes="ItemAttributes" />
+        }
+        else
+        {
+            <MudTreeViewItem Expanded="@context.Expanded" Selected="@context.Selected" SelectedChanged="selected => OnItemSelectedChangedAsync(context, selected)" Disabled="@IsItemDisabled(context)"
+                             Items="@context.Children" Value="@context.Value" Text="@context.Text" @attributes="ItemAttributes" />
+        }
+    </ItemTemplate>
+</MudTreeView>
+
+@code {
+    private MudTreeView<string> _treeView = null!;
+    private CountingTreeItemCollection _treeItems = new();
+    private readonly CountingTreeItemCollection _rootChildren = new();
+    private readonly CountingTreeItemCollection _childBChildren = new();
+
+    [Parameter]
+    public string? Height { get; set; } = "200px";
+
+    [Parameter]
+    public bool Virtualize { get; set; } = true;
+
+    [Parameter]
+    public bool Dense { get; set; }
+
+    [Parameter]
+    public string? MaxHeight { get; set; }
+
+    [Parameter]
+    public SelectionMode SelectionMode { get; set; } = SelectionMode.SingleSelection;
+
+    [Parameter]
+    public string? SelectedValue { get; set; }
+
+    [Parameter]
+    public IReadOnlyCollection<string>? SelectedValues { get; set; }
+
+    [Parameter]
+    public bool AutoSelectParent { get; set; } = true;
+
+    [Parameter]
+    public bool AutoExpand { get; set; }
+
+    [Parameter]
+    public bool ExpandOnClick { get; set; }
+
+    [Parameter]
+    public float ItemSize { get; set; }
+
+    [Parameter]
+    public int OverscanCount { get; set; } = 3;
+
+    [Parameter]
+    public int MaxItemCount { get; set; } = int.MaxValue;
+
+    [Parameter]
+    public bool BindExpanded { get; set; } = true;
+
+    [Parameter]
+    public bool RootExpanded { get; set; } = true;
+
+    [Parameter]
+    public bool UseTextOnlyValues { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public string? DisabledItemValue { get; set; }
+
+    [Parameter]
+    public IReadOnlyCollection<string>? DisabledItemValues { get; set; }
+
+    [Parameter]
+    public int DeepTreeDepth { get; set; }
+
+    [Parameter]
+    public bool DuplicateSharedItem { get; set; }
+
+    [Parameter]
+    public IReadOnlyDictionary<string, object?>? TreeAttributes { get; set; }
+
+    [Parameter]
+    public IReadOnlyDictionary<string, object?>? ItemAttributes { get; set; }
+
+    public IReadOnlyList<ITreeItemData<string>> TreeItems => _treeItems;
+
+    public int NestedDescendantEnumerationCount => _childBChildren.EnumerationCount;
+
+    public int SelectedValueChangedCount { get; private set; }
+
+    public string? LastSelectedValueChange { get; private set; }
+
+    public int ItemSelectedChangedCount { get; private set; }
+
+    public int RenderCount { get; private set; }
+
+    public Task ExpandAllAsync() => _treeView.ExpandAllAsync();
+
+    public void ResetNestedDescendantEnumerationCount()
+    {
+        _rootChildren.ResetEnumerationCount();
+        _childBChildren.ResetEnumerationCount();
+    }
+
+    public void Rerender() => StateHasChanged();
+
+    public void DisableTree()
+    {
+        Disabled = true;
+        StateHasChanged();
+    }
+
+    public void ReplaceItems()
+    {
+        _treeItems = new CountingTreeItemCollection();
+        AddDefaultItems();
+        StateHasChanged();
+    }
+
+    public void RemoveChildA()
+    {
+        var removedItem = _rootChildren.Single(item => item.Value == "Child A");
+        _rootChildren.Remove(removedItem);
+        StateHasChanged();
+    }
+
+    public void ReparentChildAUnderCollapsedChildB()
+    {
+        var childA = _rootChildren.Single(item => item.Value == "Child A");
+        var childB = _rootChildren.Single(item => item.Value == "Child B");
+        _rootChildren.Remove(childA);
+        _childBChildren.Add(childA);
+        childB.Expanded = false;
+        StateHasChanged();
+    }
+
+    public void CollapseRootExternally()
+    {
+        _treeItems.Single(item => item.Value == "Root").Expanded = false;
+        StateHasChanged();
+    }
+
+    public void ExpandChildBExternally()
+    {
+        _rootChildren.Single(item => item.Value == "Child B").Expanded = true;
+        StateHasChanged();
+    }
+
+    public void InsertBeforeDeepTree()
+    {
+        _treeItems.Insert(0, new TreeItemData<string> { Value = "Inserted", Text = "Inserted" });
+        StateHasChanged();
+    }
+
+    private Task OnSelectedValuesChangedAsync(IReadOnlyCollection<string>? values)
+    {
+        SelectedValues = values;
+        return Task.CompletedTask;
+    }
+
+    private Task OnSelectedValueChangedAsync(string? value)
+    {
+        SelectedValueChangedCount++;
+        LastSelectedValueChange = value;
+        SelectedValue = value;
+        return Task.CompletedTask;
+    }
+
+    private Task OnItemSelectedChangedAsync(ITreeItemData<string> item, bool selected)
+    {
+        item.Selected = selected;
+        ItemSelectedChangedCount++;
+        return Task.CompletedTask;
+    }
+
+    private Task OnItemExpandedChangedAsync(ITreeItemData<string> item, bool expanded)
+    {
+        item.Expanded = expanded;
+        return Task.CompletedTask;
+    }
+
+    protected override void OnInitialized()
+    {
+        if (DuplicateSharedItem)
+        {
+            AddDuplicateSharedItemTree();
+            return;
+        }
+
+        if (DeepTreeDepth > 0)
+        {
+            AddDeepTree();
+            return;
+        }
+
+        AddDefaultItems();
+    }
+
+    private void AddDuplicateSharedItemTree()
+    {
+        var shared = new TreeItemData<string> { Value = "Shared", Text = "Shared" };
+        _treeItems.Add(new TreeItemData<string>
+        {
+            Value = "Parent A",
+            Text = "Parent A",
+            Expanded = true,
+            Children = [shared]
+        });
+        _treeItems.Add(new TreeItemData<string>
+        {
+            Value = "Parent B",
+            Text = "Parent B",
+            Expanded = true,
+            Children = [shared]
+        });
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        RenderCount++;
+    }
+
+    private void AddDefaultItems()
+    {
+        if (_treeItems.Count > 0)
+        {
+            return;
+        }
+
+        _childBChildren.Clear();
+        _childBChildren.Add(new TreeItemData<string> { Value = GetValue("Grandchild"), Text = "Grandchild" });
+
+        _rootChildren.Clear();
+        _rootChildren.Add(new TreeItemData<string>
+        {
+            Value = GetValue("Child A"),
+            Text = "Child A",
+            Visible = true
+        });
+        _rootChildren.Add(new TreeItemData<string>
+        {
+            Value = GetValue("Child B"),
+            Text = "Child B",
+            Children = _childBChildren
+        });
+
+        _treeItems.Add(new TreeItemData<string>
+        {
+            Value = GetValue("Root"),
+            Text = "Root",
+            Expanded = RootExpanded,
+            Children = _rootChildren
+        });
+
+        _treeItems.Add(new TreeItemData<string>
+        {
+            Value = GetValue("Other"),
+            Text = "Other",
+        });
+    }
+
+    private string? GetValue(string text)
+    {
+        return UseTextOnlyValues ? null : text;
+    }
+
+    private bool IsItemDisabled(ITreeItemData<string> item)
+    {
+        return (DisabledItemValue is not null && string.Equals(item.Value, DisabledItemValue, StringComparison.Ordinal))
+            || DisabledItemValues?.Contains(item.Value ?? string.Empty) == true;
+    }
+
+    private void AddDeepTree()
+    {
+        TreeItemData<string>? child = null;
+        for (var index = DeepTreeDepth - 1; index >= 0; index--)
+        {
+            CountingTreeItemCollection? children = null;
+            if (child is not null)
+            {
+                children = new CountingTreeItemCollection();
+                children.Add(child);
+            }
+
+            child = new TreeItemData<string>
+            {
+                Value = $"Node {index}",
+                Text = $"Node {index}",
+                Expanded = true,
+                Children = children
+            };
+        }
+
+        _treeItems.Add(child!);
+    }
+
+    private sealed class CountingTreeItemCollection : IReadOnlyList<ITreeItemData<string>>
+    {
+        private readonly List<ITreeItemData<string>> _items = [];
+        private bool _countEnumerations;
+
+        public int Count => _items.Count;
+
+        public int EnumerationCount { get; private set; }
+
+        public ITreeItemData<string> this[int index] => _items[index];
+
+        public void Add(ITreeItemData<string> item) => _items.Add(item);
+
+        public void Insert(int index, ITreeItemData<string> item) => _items.Insert(index, item);
+
+        public void Clear() => _items.Clear();
+
+        public bool Remove(ITreeItemData<string> item) => _items.Remove(item);
+
+        public void ResetEnumerationCount()
+        {
+            EnumerationCount = 0;
+            _countEnumerations = true;
+        }
+
+        public IEnumerator<ITreeItemData<string>> GetEnumerator()
+        {
+            if (_countEnumerations)
+            {
+                EnumerationCount++;
+            }
+
+            return _items.GetEnumerator();
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+}

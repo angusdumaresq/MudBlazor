@@ -73,7 +73,6 @@ namespace MudBlazor
         [Parameter]
         public float ItemSize { get; set; } = 50f;
 
-#if NET9_0_OR_GREATER
         /// <summary>
         /// Gets or sets the maximum number of items that will be rendered, even if the client reports
         /// that its viewport is large enough to show more. The default value is 100.
@@ -82,9 +81,11 @@ namespace MudBlazor
         /// Do not set this to a smaller number than you expect to fit on a realistic-sized window, because
         /// that will leave a blank gap below and the user may not be able to see the rest of the content.
         /// </summary>
+        /// <remarks>
+        /// This parameter is supported on .NET 9 and later. On .NET 8, it is accepted for API compatibility but has no effect.
+        /// </remarks>
         [Parameter]
         public int MaxItemCount { get; set; } = 100;
-#endif
 
         /// <summary>
         /// Gets or sets tag name of the HTML element that will be used as virtualization spacer. Default is div.
