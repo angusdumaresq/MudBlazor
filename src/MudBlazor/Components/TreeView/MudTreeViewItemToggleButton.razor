@@ -12,7 +12,8 @@
                        Color="@(Loading ? LoadingIconColor : ExpandedIconColor)"
                        Class="@Classname"
                        Style="@Style"
+                       tabindex="@(IsVirtualizedItem ? "-1" : null)"
+                       aria-hidden="@(IsVirtualizedItem ? "true" : null)"
                        aria-label="@(Expanded ? @Localizer[LanguageResource.MudTreeView_CollapseItem] : @Localizer[LanguageResource.MudTreeView_ExpandItem])" />
     }
 </div>
-

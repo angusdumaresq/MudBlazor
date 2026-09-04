@@ -1,26 +1,42 @@
-﻿@namespace MudBlazor
+@namespace MudBlazor
 @inherits MudComponentBase
 @typeparam T
 @attribute [CascadingTypeParameter(nameof(T))]
 
-<ul @attributes="UserAttributes" class="@Classname" style="@Stylename">
+<ul role="@(IsVirtualized ? "tree" : null)"
+    tabindex="@(IsVirtualized && !Disabled ? (int?)0 : null)"
+    aria-activedescendant="@GetActiveDescendantId()"
+    aria-multiselectable="@(IsVirtualized && MultiSelection ? "true" : null)"
+    aria-disabled="@(IsVirtualized && Disabled ? "true" : null)"
+    @attributes="UserAttributes" id="@GetEffectiveElementId()" class="@Classname" style="@Stylename" @ref="_treeElement">
     <CascadingValue Value="@MudTreeRoot" IsFixed="true">
-        @* Expose the current data node to ItemTemplate-created MudTreeViewItem instances so
-           per-node server-loading state can live on the tree root instead of the component instance. *@
         <CascadingValue Name="@MudTreeViewCascadingValues.ItemData" Value="default(ITreeItemData<T>)" IsFixed="true">
-            @if (ItemTemplate != null && Items != null)
-            {
-                @foreach (var item in Items)
+            @* A tree rendered inside a virtualized row must not inherit that row's context, or its items would render as virtualized rows of the outer tree. *@
+            <CascadingValue Name="@MudTreeViewCascadingValues.ItemContext" Value="default(TreeViewItemContext<T>)" IsFixed="true">
+                @if (IsVirtualized)
                 {
-                    <CascadingValue Name="@MudTreeViewCascadingValues.ItemData" Value="item" IsFixed="true">
-                        @ItemTemplate(item)
-                    </CascadingValue>
+                    <MudVirtualize Items="@Rows" Enabled="true" SpacerElement="li" OverscanCount="@OverscanCount" ItemSize="@GetEffectiveItemSize()" MaxItemCount="@MaxItemCount" Context="row">
+                        <CascadingValue @key="row.RowKey" Name="@MudTreeViewCascadingValues.ItemData" Value="row.Item">
+                            <CascadingValue Name="@MudTreeViewCascadingValues.ItemContext" Value="row">
+                                @ItemTemplate(row.Item)
+                            </CascadingValue>
+                        </CascadingValue>
+                    </MudVirtualize>
                 }
-            }
-            else if (ChildContent != null)
-            {
-                @ChildContent
-            }
+                else if (ItemTemplate != null && Items != null)
+                {
+                    @foreach (var item in Items)
+                    {
+                        <CascadingValue Name="@MudTreeViewCascadingValues.ItemData" Value="item" IsFixed="true">
+                            @ItemTemplate(item)
+                        </CascadingValue>
+                    }
+                }
+                else if (ChildContent != null)
+                {
+                    @ChildContent
+                }
+            </CascadingValue>
         </CascadingValue>
     </CascadingValue>
 </ul>

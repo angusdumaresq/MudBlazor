@@ -25,13 +25,20 @@ public partial class MudTreeViewItemToggleButton : MudComponentBase
             .WithEventCallback(() => ExpandedChanged);
     }
 
+    [CascadingParameter(Name = MudTreeViewCascadingValues.ItemContext)]
+    private object? CurrentItemContext { get; set; }
+
+    private bool IsVirtualizedItem => CurrentItemContext is not null;
+
     protected string Classname =>
         new CssBuilder(Class)
             .AddClass("mud-treeview-item-expand-button")
             .AddClass("mud-treeview-item-arrow-expand", !Loading)
-            .AddClass("mud-transform", _expandedState.Value && !Loading)
+            .AddClass("mud-transform", GetExpanded() && !Loading)
             .AddClass("mud-treeview-item-arrow-load", Loading)
             .Build();
+
+    private bool GetExpanded() => IsVirtualizedItem ? Expanded : _expandedState.Value;
 
     /// <summary>
     /// Shows this button.
@@ -118,7 +125,9 @@ public partial class MudTreeViewItemToggleButton : MudComponentBase
 
     private Task ToggleAsync()
     {
-        return _expandedState.SetValueAsync(!_expandedState.Value);
+        return IsVirtualizedItem
+            ? ExpandedChanged.InvokeAsync(!Expanded)
+            : _expandedState.SetValueAsync(!_expandedState.Value);
     }
 
     private void OnDoubleClick()

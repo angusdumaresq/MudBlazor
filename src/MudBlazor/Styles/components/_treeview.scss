@@ -27,11 +27,13 @@
   }
 }
 
+$treeview-indent: 17px;
+
 .mud-treeview-group {
   margin: 0px;
   padding: 0px;
-  margin-left: 17px;
-  margin-inline-start: 17px;
+  margin-left: $treeview-indent;
+  margin-inline-start: $treeview-indent;
   margin-inline-end: unset;
   list-style: none;
 }
@@ -56,6 +58,24 @@
     color: var(--mud-palette-action-disabled) !important;
     cursor: default !important;
     pointer-events: none !important;
+  }
+
+  // Virtualized rows are flat siblings, so nesting is expressed through an indent per depth level.
+  &.mud-treeview-item-virtualized {
+    padding-inline-start: calc(var(--mud-treeview-item-depth, 0) * #{$treeview-indent});
+  }
+}
+
+// A virtualized tree keeps keyboard focus on the list and exposes the active row through aria-activedescendant,
+// so the focus ring is drawn on the active row instead of the list.
+.mud-treeview-virtualized {
+  &:focus-visible {
+    outline: none;
+  }
+
+  &:focus-visible > .mud-treeview-item-active > .mud-treeview-item-content {
+    outline: 2px solid var(--mud-palette-primary);
+    outline-offset: -2px;
   }
 }
 
