@@ -144,16 +144,8 @@
             <SectionHeader Title="Virtualization">
                 <Description>
                     The items in the <CodeInline>&lt;MudTreeView></CodeInline> can be virtualized to provide better rendering performance. Setting the <CodeInline>Virtualize</CodeInline> property
-                    to <CodeInline>true</CodeInline> will cause data-driven items to be rendered virtually when <CodeInline>Items</CodeInline>, <CodeInline>ItemTemplate</CodeInline>, and either
-                    <CodeInline>Height</CodeInline> or <CodeInline>MaxHeight</CodeInline> are set. Bind item expansion and visibility to the backing data item. Use <CodeInline>ItemSize</CodeInline>,
-                    <CodeInline>OverscanCount</CodeInline>, and <CodeInline>MaxItemCount</CodeInline> to tune custom row layouts. An <CodeInline>ItemSize</CodeInline> of zero automatically uses
-                    the standard or dense row height. Switching between standard and virtualized rendering takes effect immediately. The newly active renderer reads <CodeInline>Expanded</CodeInline>,
-                    <CodeInline>Children</CodeInline>, and <CodeInline>Visible</CodeInline> from each backing <CodeInline>ITreeItemData</CodeInline>, and the selection carries over through
-                    <CodeInline>SelectedValue</CodeInline> or <CodeInline>SelectedValues</CodeInline>; transient state held only by rendered item components is not copied between modes. Each backing item should be a distinct instance.
-                    Virtualized trees expose their hierarchy to assistive technologies and should be given an accessible name with <CodeInline>aria-label</CodeInline> or
-                    <CodeInline>aria-labelledby</CodeInline>. The tree itself receives keyboard focus and marks the current item with <CodeInline>aria-activedescendant</CodeInline>.
-                    Use the Up and Down arrow keys, Home, and End to move between visible items; Right and Left expand, collapse, or move between parent and child items;
-                    and Enter or Space selects the current item.
+                    to <CodeInline>true</CodeInline> will cause the items to be rendered virtually. You must use <CodeInline>Items</CodeInline> with an <CodeInline>ItemTemplate</CodeInline>
+                    and restrict the height for virtualization to work.
                 </Description>
             </SectionHeader>
             <SectionContent Code="@nameof(TreeViewVirtualizationExample)" ShowCode="true">
