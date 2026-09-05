@@ -1,8 +1,7 @@
-﻿@namespace MudBlazor.Docs.Examples
+@namespace MudBlazor.Docs.Examples
 
 <MudPaper Width="300px" Elevation="0">
-    <MudSwitch @bind-Value="_virtualize" Color="Color.Primary">Virtualize</MudSwitch>
-    <MudTreeView Items="@TreeItems" Virtualize="@_virtualize" Height="300px" Hover aria-label="Organization">
+    <MudTreeView Items="@TreeItems" Virtualize="true" Height="300px" Hover aria-label="Organization">
         <ItemTemplate>
             <MudTreeViewItem @bind-Expanded="@context.Expanded" @bind-Selected="@context.Selected" Visible="@context.Visible"
                              Items="@context.Children" Value="@context.Value" Icon="@context.Icon" Text="@context.Text" />
@@ -11,8 +10,6 @@
 </MudPaper>
 
 @code {
-    private bool _virtualize = true;
-
     public List<TreeItemData<string>> TreeItems { get; set; } = [];
 
     public class TreeItemPresenter : TreeItemData<string>
@@ -26,43 +23,16 @@
 
     protected override void OnInitialized()
     {
-        TreeItems.Add(new TreeItemPresenter("People", Icons.Material.Filled.Groups)
+        for (var i = 1; i <= 20; i++)
         {
-            Expanded = true,
-            Children =
-            [
-                CreateDepartment("Engineering", Icons.Material.Filled.Engineering,
-                    "Ada", "Alan", "Angus", "Barbara", "Dave", "Grace", "James", "Linus", "Margaret", "Nick",
-                    "Radia", "Tim", "Victor", "Wendy", "Yasmin", "Zoe"),
-                CreateDepartment("Design", Icons.Material.Filled.DesignServices,
-                    "Ava", "Chloe", "Ella", "Freya", "Hannah", "Iris", "Jade", "Maya", "Nora", "Olivia",
-                    "Poppy", "Ruby", "Sofia", "Tara", "Violet", "Willow"),
-                CreateDepartment("Product", Icons.Material.Filled.Work,
-                    "Amelia", "Ben", "Clara", "Ethan", "Felix", "Georgia", "Harvey", "Isla", "Leo", "Mia",
-                    "Noah", "Oscar", "Phoebe", "Quinn", "Riley", "Sienna"),
-                CreateDepartment("Research", Icons.Material.Filled.Science,
-                    "Alice", "Daniel", "Elena", "Finn", "Gemma", "Henry", "Imogen", "Jonah", "Lena", "Milo",
-                    "Naomi", "Owen", "Priya", "Rosa", "Sam", "Theo"),
-                CreateDepartment("Support", Icons.Material.Filled.SupportAgent,
-                    "Abigail", "Callum", "Daisy", "Eli", "Florence", "George", "Holly", "Isaac", "Julia", "Kai",
-                    "Lara", "Mason", "Nina", "Orla", "Piper", "Sebastian")
-            ]
-        });
-    }
-
-    private static ITreeItemData<string> CreateDepartment(string name, string icon, params string[] people)
-    {
-        return new TreeItemPresenter(name, icon)
-        {
-            Expanded = true,
-            Children = CreatePeople(people)
-        };
-    }
-
-    private static IReadOnlyCollection<ITreeItemData<string>> CreatePeople(params string[] names)
-    {
-        return names
-            .Select(name => (ITreeItemData<string>)new TreeItemPresenter(name, Icons.Material.Filled.Person))
-            .ToList();
+            TreeItems.Add(new TreeItemPresenter($"Group_{i}", Icons.Material.Filled.Folder)
+            {
+                Expanded = true,
+                Children = Enumerable
+                    .Range(1, 50)
+                    .Select(j => (ITreeItemData<string>)new TreeItemPresenter($"Value_{i}_{j}", Icons.Material.Filled.Description))
+                    .ToList()
+            });
+        }
     }
 }
