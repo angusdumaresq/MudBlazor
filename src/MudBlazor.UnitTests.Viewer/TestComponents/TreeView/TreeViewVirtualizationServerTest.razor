@@ -1,4 +1,5 @@
-﻿<MudTreeView T="string" Items="_treeItems" Virtualize="@Virtualize" Height="@Height" ExpandOnClick="true" ServerData="LoadServerData"
+﻿@using System.Collections.Concurrent
+<MudTreeView T="string" Items="_treeItems" Virtualize="@Virtualize" Height="@Height" ExpandOnClick="true" ServerData="LoadServerData"
              OverscanCount="@OverscanCount" MaxItemCount="@MaxItemCount" @bind-SelectedValue="SelectedValue">
     <ItemTemplate>
         @if (BindItems)
@@ -19,7 +20,7 @@
     private IReadOnlyList<TreeItemData<string>> _treeItems = [];
     private int _loadCount;
     private readonly TaskCompletionSource _serverDataStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _secondServerDataStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly ConcurrentDictionary<int, TaskCompletionSource> _loadStarted = new();
     private readonly TaskCompletionSource<IReadOnlyCollection<TreeItemData<string>>> _serverDataCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Dictionary<int, TaskCompletionSource<IReadOnlyCollection<TreeItemData<string>>>> _independentServerDataCompletions = [];
     private readonly TaskCompletionSource _expandedChangeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -40,9 +41,6 @@
 
     [Parameter]
     public int MaxItemCount { get; set; } = int.MaxValue;
-
-    [Parameter]
-    public int? SelectedChildIndex { get; set; }
 
     [Parameter]
     public bool UseTextFallback { get; set; }
@@ -79,8 +77,6 @@
 
     public Task ServerDataStarted => _serverDataStarted.Task;
 
-    public Task SecondServerDataStarted => _secondServerDataStarted.Task;
-
     public Task ExpandedChangeStarted => _expandedChangeStarted.Task;
 
     public Task ItemsChangeStarted => _itemsChangeStarted.Task;
@@ -88,6 +84,11 @@
     public Task SecondItemsChangeStarted => _secondItemsChangeStarted.Task;
 
     public List<string?> LoadedParentValues { get; } = [];
+
+    /// <summary>
+    /// Completes once the server load with the given one-based number has started.
+    /// </summary>
+    public Task LoadStarted(int loadNumber) => GetLoadStartedSource(loadNumber).Task;
 
     protected override void OnInitialized()
     {
@@ -102,8 +103,7 @@
                         .Select(childIndex => new TreeItemData<string>
                         {
                             Value = $"Initial {childIndex + 1}",
-                            Text = $"Initial {childIndex + 1}",
-                            Selected = false
+                            Text = $"Initial {childIndex + 1}"
                         })
                         .ToList()
                     : null
@@ -115,10 +115,7 @@
     {
         var loadNumber = ++_loadCount;
         LoadedParentValues.Add(parentValue);
-        if (loadNumber == 2)
-        {
-            _secondServerDataStarted.TrySetResult();
-        }
+        GetLoadStartedSource(loadNumber).TrySetResult();
         if (DelayServerDataIndependently)
         {
             var completion = new TaskCompletionSource<IReadOnlyCollection<TreeItemData<string>>>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -177,11 +174,6 @@
         }
     }
 
-    public void FailServerData()
-    {
-        _serverDataCompletion.TrySetException(new InvalidOperationException("Server data failed."));
-    }
-
     public void CompleteExpandedChange()
     {
         _expandedChangeCompletion.TrySetResult();
@@ -222,16 +214,13 @@
 
     private IReadOnlyCollection<TreeItemData<string>> CreateLoadedItems() => CreateLoadedItems(_loadCount);
 
-    private IReadOnlyCollection<TreeItemData<string>> CreateLoadedItems(int loadNumber)
+    private static IReadOnlyCollection<TreeItemData<string>> CreateLoadedItems(int loadNumber)
     {
-        return Enumerable.Range(0, 1)
-            .Select(index => new TreeItemData<string>
-            {
-                Value = $"Loaded {loadNumber}",
-                Text = $"Loaded {loadNumber}",
-                Selected = index == SelectedChildIndex
-            })
-            .ToList();
+        return [new TreeItemData<string> { Value = $"Loaded {loadNumber}", Text = $"Loaded {loadNumber}" }];
     }
 
+    private TaskCompletionSource GetLoadStartedSource(int loadNumber)
+    {
+        return _loadStarted.GetOrAdd(loadNumber, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+    }
 }

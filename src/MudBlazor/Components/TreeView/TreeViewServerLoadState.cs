@@ -10,8 +10,7 @@ namespace MudBlazor;
 /// The <see cref="MudTreeView{T}.ServerData"/> load state of one tree item.
 /// </summary>
 /// <remarks>
-/// <see cref="Version"/> increments whenever a new load or reload is started, so a completion whose version no longer
-/// matches has been superseded and must be ignored.
+/// <see cref="Version"/> increments whenever a new load or reload is started, so a completion whose version no longer matches has been superseded and must be ignored.
 /// </remarks>
 internal sealed class TreeViewServerLoadEntry
 {
@@ -47,8 +46,7 @@ internal sealed class TreeViewServerLoadEntry
 /// </summary>
 /// <typeparam name="T">The type of value associated with each item.</typeparam>
 /// <remarks>
-/// State belongs to the backing item rather than to a rendered component, so it survives virtualization, mode switches
-/// and re-rendering, and disappears together with the item.
+/// State belongs to the backing item rather than to a rendered component, so it survives virtualization, mode switches and re-rendering, and disappears together with the item.
 /// </remarks>
 internal sealed class TreeViewServerLoadState<T>
 {

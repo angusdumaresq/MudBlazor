@@ -97,11 +97,40 @@ internal static class TreeViewHierarchy<T>
         var visited = new HashSet<ITreeItemData<T>>(ReferenceEqualityComparer.Instance);
         foreach (var item in items ?? [])
         {
-            var result = await FilterAsync(item, filter, visited);
+            var result = await FilterItemAsync(item, filter, visited);
             changed = result.Changed || changed;
         }
 
         return changed;
+
+        static async Task<(bool Visible, bool Changed)> FilterItemAsync(
+            ITreeItemData<T> item,
+            Func<ITreeItemData<T>, Task<bool>> filter,
+            HashSet<ITreeItemData<T>> visited)
+        {
+            if (!visited.Add(item))
+            {
+                return (item.Visible, false);
+            }
+
+            var hasVisibleChild = false;
+            var itemChanged = false;
+            if (item.HasChildren)
+            {
+                foreach (var child in item.Children)
+                {
+                    var childResult = await FilterItemAsync(child, filter, visited);
+                    hasVisibleChild = childResult.Visible || hasVisibleChild;
+                    itemChanged = childResult.Changed || itemChanged;
+                }
+            }
+
+            var visible = await filter(item) || hasVisibleChild;
+            itemChanged = item.Visible != visible || item.Expanded != visible || itemChanged;
+            item.Visible = visible;
+            item.Expanded = visible;
+            return (visible, itemChanged);
+        }
     }
 
     /// <summary>
@@ -124,85 +153,49 @@ internal static class TreeViewHierarchy<T>
         }
 
         return changed;
+
+        static bool ExpandSelectedAncestors(ITreeItemData<T> item, HashSet<T> selection, HashSet<ITreeItemData<T>> visited, ref bool changed)
+        {
+            var childContainsSelection = false;
+            if (visited.Add(item) && item.HasChildren)
+            {
+                foreach (var child in item.Children)
+                {
+                    childContainsSelection = ExpandSelectedAncestors(child, selection, visited, ref changed) || childContainsSelection;
+                }
+            }
+
+            if (childContainsSelection && item.Expandable && !item.Expanded)
+            {
+                item.Expanded = true;
+                changed = true;
+            }
+
+            var value = GetItemValue(item);
+            return childContainsSelection || (value is not null && selection.Contains(value));
+        }
     }
 
     private static void Visit(IReadOnlyCollection<ITreeItemData<T>>? items, Action<ITreeItemData<T>> visit)
     {
         var visited = new HashSet<ITreeItemData<T>>(ReferenceEqualityComparer.Instance);
-        Visit(items ?? [], visit, visited);
-    }
+        VisitItems(items ?? [], visit, visited);
 
-    private static void Visit(
-        IReadOnlyCollection<ITreeItemData<T>> items,
-        Action<ITreeItemData<T>> visit,
-        HashSet<ITreeItemData<T>> visited)
-    {
-        foreach (var item in items)
+        static void VisitItems(IReadOnlyCollection<ITreeItemData<T>> items, Action<ITreeItemData<T>> visit, HashSet<ITreeItemData<T>> visited)
         {
-            if (!visited.Add(item))
+            foreach (var item in items)
             {
-                continue;
-            }
+                if (!visited.Add(item))
+                {
+                    continue;
+                }
 
-            visit(item);
-            if (item.HasChildren)
-            {
-                Visit(item.Children, visit, visited);
+                visit(item);
+                if (item.HasChildren)
+                {
+                    VisitItems(item.Children, visit, visited);
+                }
             }
         }
-    }
-
-    private static bool ExpandSelectedAncestors(
-        ITreeItemData<T> item,
-        HashSet<T> selection,
-        HashSet<ITreeItemData<T>> visited,
-        ref bool changed)
-    {
-        var childContainsSelection = false;
-        if (visited.Add(item) && item.HasChildren)
-        {
-            foreach (var child in item.Children)
-            {
-                childContainsSelection = ExpandSelectedAncestors(child, selection, visited, ref changed) || childContainsSelection;
-            }
-        }
-
-        if (childContainsSelection && item.Expandable && !item.Expanded)
-        {
-            item.Expanded = true;
-            changed = true;
-        }
-
-        var value = GetItemValue(item);
-        return childContainsSelection || (value is not null && selection.Contains(value));
-    }
-
-    private static async Task<(bool Visible, bool Changed)> FilterAsync(
-        ITreeItemData<T> item,
-        Func<ITreeItemData<T>, Task<bool>> filter,
-        HashSet<ITreeItemData<T>> visited)
-    {
-        if (!visited.Add(item))
-        {
-            return (item.Visible, false);
-        }
-
-        var hasVisibleChild = false;
-        var changed = false;
-        if (item.HasChildren)
-        {
-            foreach (var child in item.Children)
-            {
-                var childResult = await FilterAsync(child, filter, visited);
-                hasVisibleChild = childResult.Visible || hasVisibleChild;
-                changed = childResult.Changed || changed;
-            }
-        }
-
-        var visible = await filter(item) || hasVisibleChild;
-        changed = item.Visible != visible || item.Expanded != visible || changed;
-        item.Visible = visible;
-        item.Expanded = visible;
-        return (visible, changed);
     }
 }

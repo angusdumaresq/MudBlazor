@@ -1,4 +1,4 @@
-@namespace MudBlazor.Docs.Examples
+﻿@namespace MudBlazor.Docs.Examples
 
 <MudPaper Width="300px" Elevation="0">
     <MudTreeView Items="@TreeItems" Virtualize="true" Height="300px" Hover>
@@ -23,14 +23,14 @@
 
     protected override void OnInitialized()
     {
-        for (var i = 1; i <= 20; i++)
+        for (var year = 2006; year <= 2025; year++)
         {
-            TreeItems.Add(new TreeItemPresenter($"Group_{i}", Icons.Material.Filled.Folder)
+            TreeItems.Add(new TreeItemPresenter($"Reports {year}", Icons.Material.Filled.Folder)
             {
                 Expanded = true,
                 Children = Enumerable
                     .Range(1, 50)
-                    .Select(j => (ITreeItemData<string>)new TreeItemPresenter($"Value_{i}_{j}", Icons.Material.Filled.Description))
+                    .Select(week => (ITreeItemData<string>)new TreeItemPresenter($"Week {week} report.pdf", Icons.Material.Filled.Description))
                     .ToList()
             });
         }

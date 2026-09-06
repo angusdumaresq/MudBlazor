@@ -75,7 +75,6 @@ namespace MudBlazor
             new CssBuilder("mud-treeview")
                 .AddClass("mud-treeview-dense", Dense)
                 .AddClass("mud-treeview-hover", !Disabled && Hover && (!ReadOnly || ExpandOnClick))
-                .AddClass("mud-treeview-virtualized", IsVirtualized)
                 .AddClass($"mud-treeview-selected-{Color.ToStringFast(true)}")
                 .AddClass($"mud-treeview-checked-{CheckBoxColor.ToStringFast(true)}")
                 .AddClass(Class)
@@ -201,9 +200,10 @@ namespace MudBlazor
         /// Renders only visible data items instead of all items.
         /// </summary>
         /// <remarks>
-        /// Defaults to <c>false</c>. Only works when <see cref="Height"/> or <see cref="MaxHeight"/> is set, and only applies when <see cref="Items"/> and <see cref="ItemTemplate"/> are set.
-        /// The virtualized tree reads <see cref="ITreeItemData{T}.Expanded"/>, <see cref="ITreeItemData{T}.Children"/>, <see cref="ITreeItemData{T}.Selected"/>, and <see cref="ITreeItemData{T}.Visible"/>
-        /// from the backing data, so bind the item template to those properties. Each backing item should be a distinct instance.
+        /// Defaults to <c>false</c>.
+        /// Only works when <see cref="Height"/> or <see cref="MaxHeight"/> is set, and only applies when <see cref="Items"/> and <see cref="ItemTemplate"/> are set.
+        /// The virtualized tree reads <see cref="ITreeItemData{T}.Expanded"/>, <see cref="ITreeItemData{T}.Children"/>, <see cref="ITreeItemData{T}.Selected"/>, and <see cref="ITreeItemData{T}.Visible"/> from the backing data, so bind the item template to those properties.
+        /// Each backing item should be a distinct instance.
         /// </remarks>
         [Parameter]
         [Category(CategoryTypes.TreeView.Behavior)]
@@ -213,7 +213,8 @@ namespace MudBlazor
         /// The number of additional items rendered outside the visible region when <see cref="Virtualize"/> is <c>true</c>.
         /// </summary>
         /// <remarks>
-        /// Defaults to <c>3</c>. This value can reduce the amount of rendering during scrolling, but higher values can affect performance.
+        /// Defaults to <c>3</c>.
+        /// This value can reduce the amount of rendering during scrolling, but higher values can affect performance.
         /// </remarks>
         [Parameter]
         [Category(CategoryTypes.TreeView.Behavior)]
@@ -233,7 +234,8 @@ namespace MudBlazor
         /// The maximum number of items rendered when <see cref="Virtualize"/> is <c>true</c>.
         /// </summary>
         /// <remarks>
-        /// Defaults to <see cref="int.MaxValue"/>. This only affects .NET 9 and later.
+        /// Defaults to <see cref="int.MaxValue"/>.
+        /// This only affects .NET 9 and later.
         /// </remarks>
         [Parameter]
         [Category(CategoryTypes.TreeView.Behavior)]
@@ -422,13 +424,13 @@ namespace MudBlazor
             if (MudTreeRoot == this)
             {
                 _projectionDirty = true;
-                if (HasValidVirtualizationConfiguration)
+                if (IsVirtualized)
                 {
                     _reconcileSelection = true;
                 }
             }
 
-            if (Virtualize && !HasValidVirtualizationConfiguration && !_hasLoggedInvalidVirtualizeConfiguration)
+            if (Virtualize && !IsVirtualized && !_hasLoggedInvalidVirtualizeConfiguration)
             {
                 Logger.LogWarning(
                     "{Component} requires {Items}, {ItemTemplate}, and either {Height} or {MaxHeight} when {Virtualize} is true. Falling back to standard rendering.",
@@ -467,8 +469,7 @@ namespace MudBlazor
                     }
                 }
 
-                // Auto-expansion follows selection transitions only, so that a branch the user collapsed stays collapsed
-                // when the tree merely re-renders.
+                // Auto-expansion follows selection transitions only, so that a branch the user collapsed stays collapsed when the tree merely re-renders.
                 if (firstRender || selectionChanged)
                 {
                     shouldRefresh = ApplyVirtualizedAutoExpand(GetSelection()) || shouldRefresh;
@@ -664,14 +665,11 @@ namespace MudBlazor
         }
 
         [MemberNotNullWhen(true, nameof(ItemTemplate), nameof(Items))]
-        private bool HasValidVirtualizationConfiguration =>
+        internal bool IsVirtualized =>
             Virtualize
             && ItemTemplate is not null
             && Items is not null
             && (!string.IsNullOrWhiteSpace(Height) || !string.IsNullOrWhiteSpace(MaxHeight));
-
-        [MemberNotNullWhen(true, nameof(ItemTemplate), nameof(Items))]
-        internal bool IsVirtualized => HasValidVirtualizationConfiguration;
 
         internal bool IsDisposed => _isDisposed;
 
@@ -684,17 +682,12 @@ namespace MudBlazor
             {
                 if (_projectionDirty)
                 {
-                    RebuildProjection();
+                    _projection.Rebuild(Items, GetSelection(), Comparer);
+                    _projectionDirty = false;
                 }
 
                 return _projection.Rows;
             }
-        }
-
-        private void RebuildProjection()
-        {
-            _projection.Rebuild(Items, GetSelection(), Comparer);
-            _projectionDirty = false;
         }
 
         /// <summary>
@@ -710,8 +703,7 @@ namespace MudBlazor
             }
 
             _projectionDirty = true;
-            // Backing Selected flags are only a source of truth for the virtualized renderer; a standard tree keeps
-            // its selection in the item components and must not have it rewritten from the data.
+            // Backing Selected flags are only a source of truth for the virtualized renderer, since a standard tree keeps its selection in the item components and must not have it rewritten from the data.
             _reconcileSelection |= reconcileSelection && IsVirtualized;
             if (IsVirtualized || alwaysRender)
             {

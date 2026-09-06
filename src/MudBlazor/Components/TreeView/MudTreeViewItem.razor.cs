@@ -26,6 +26,8 @@ namespace MudBlazor
         private readonly ParameterState<IReadOnlyCollection<ITreeItemData<T>>?> _itemsState;
         private readonly DefaultConverter<T?> _converter = new();
         private readonly HashSet<MudTreeViewItem<T>> _childItems = new();
+        private bool? _renderedCheckBoxState;
+        private bool _hasRenderedCheckBoxState;
 
         public MudTreeViewItem()
         {
@@ -443,10 +445,6 @@ namespace MudBlazor
 
         private bool GetServerDataLoading() => GetServerLoadEntry().IsLoading;
 
-        private bool? _renderedCheckBoxState;
-
-        private bool _hasRenderedCheckBoxState;
-
         /// <summary>
         /// Gets the tri-state checkbox value, remembering what was rendered.
         /// </summary>
@@ -799,7 +797,8 @@ namespace MudBlazor
             }
             catch (Exception) when (version != entry.Version || treeRoot.IsDisposed)
             {
-                // A reload or disposal superseded this request. Its result and failure no longer belong to the item.
+                // A reload or disposal superseded this request.
+                // Its result and failure no longer belong to the item.
             }
             finally
             {

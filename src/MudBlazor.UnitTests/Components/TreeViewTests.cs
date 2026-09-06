@@ -785,12 +785,13 @@ namespace MudBlazor.UnitTests.Components
         public async Task TreeViewVirtualize_Accessibility_HidesVirtualizationSpacersOnce()
         {
             var comp = Context.Render<TreeViewVirtualizationTest>();
-
-            await comp.InvokeAsync(comp.Instance.Rerender);
-
             var invocation = Context.JSInterop.Invocations["mudElementRef.setChildrenAttributes"].Should().ContainSingle().Subject;
             invocation.Arguments[1].Should().Be(":scope > li:not(.mud-treeview-item)");
             invocation.Arguments[2].Should().BeEquivalentTo(new Dictionary<string, string> { ["role"] = "presentation", ["aria-hidden"] = "true" });
+
+            await comp.InvokeAsync(comp.Instance.Rerender);
+
+            Context.JSInterop.Invocations["mudElementRef.setChildrenAttributes"].Should().HaveCount(1, "a re-render must not mark the spacers again");
         }
 
         /// <summary>
@@ -801,13 +802,20 @@ namespace MudBlazor.UnitTests.Components
         {
             var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
                 .Add(x => x.DuplicateSharedItem, true));
-            var sharedRows = FindTreeItems(comp, "Shared");
+            var sharedRows = FindSharedRows(comp);
             sharedRows.Should().HaveCount(2);
 
             await sharedRows[1].QuerySelector("div.mud-treeview-item-content")!.ClickAsync();
 
             comp.Instance.SelectedValue.Should().Be("Shared");
-            FindTreeItems(comp, "Shared").Should().OnlyContain(row => row.QuerySelector("div.mud-treeview-item-content")!.ClassList.Contains("mud-treeview-item-selected"));
+            FindSharedRows(comp).Should().OnlyContain(row => row.QuerySelector("div.mud-treeview-item-content")!.ClassList.Contains("mud-treeview-item-selected"));
+
+            static IReadOnlyList<IElement> FindSharedRows(IRenderedComponent<TreeViewVirtualizationTest> component)
+            {
+                return component.FindAll("li.mud-treeview-item")
+                    .Where(item => item.FirstElementChild?.TextContent.Contains("Shared", StringComparison.Ordinal) == true)
+                    .ToList();
+            }
         }
 
         /// <summary>
@@ -916,7 +924,21 @@ namespace MudBlazor.UnitTests.Components
         [Test]
         public async Task TreeViewVirtualize_DataItems_MovedItemKeepsComponentAndReceivesCurrentDepth()
         {
-            var comp = Context.Render<TreeViewVirtualizedMoveItemTest>();
+            var movableItem = new TreeItemData<string> { Value = "Movable", Text = "Movable" };
+            var parentItem = new TreeItemData<string> { Value = "Parent", Text = "Parent", Children = [movableItem] };
+            var comp = Context.Render<MudTreeView<string>>(parameters => parameters
+                .Add(x => x.Items, new List<ITreeItemData<string>> { parentItem, movableItem })
+                .Add(x => x.Virtualize, true)
+                .Add(x => x.Height, "120px")
+                .Add(x => x.SelectionMode, SelectionMode.MultiSelection)
+                .Add(x => x.ItemTemplate, item => builder =>
+                {
+                    builder.OpenComponent<MudTreeViewItem<string>>(0);
+                    builder.AddAttribute(1, nameof(MudTreeViewItem<string>.Value), item.Value);
+                    builder.AddAttribute(2, nameof(MudTreeViewItem<string>.Text), item.Text);
+                    builder.AddAttribute(3, nameof(MudTreeViewItem<string>.Items), item.Children);
+                    builder.CloseComponent();
+                }));
             var movableComponent = comp.FindComponents<MudTreeViewItem<string>>()
                 .Single(item => item.Instance.CurrentItemData?.Value == "Movable")
                 .Instance;
@@ -927,7 +949,9 @@ namespace MudBlazor.UnitTests.Components
             movable.GetAttribute("aria-posinset").Should().Be("2");
             movable.GetAttribute("aria-setsize").Should().Be("2");
 
-            await comp.InvokeAsync(comp.Instance.MoveItemUnderParent);
+            parentItem.Expanded = true;
+            await comp.InvokeAsync(() => comp.SetParametersAndRenderAsync(parameters => parameters
+                .Add(x => x.Items, new List<ITreeItemData<string>> { parentItem })));
 
             comp.WaitForAssertion(() =>
             {
@@ -958,7 +982,7 @@ namespace MudBlazor.UnitTests.Components
             comp.WaitForAssertion(() =>
             {
                 comp.Instance.SelectedValue.Should().Be("Grandchild");
-                GetVirtualizedTexts(comp).Should().Contain("Grandchild");
+                GetTreeViewItemContexts(comp).Select(itemContext => itemContext.Item.Text).Should().Contain("Grandchild");
             });
         }
 
@@ -1258,7 +1282,7 @@ namespace MudBlazor.UnitTests.Components
 
             var expandTask = FindTreeItem(comp, "Node A").QuerySelector("button.mud-treeview-item-expand-button")!.ClickAsync();
             await comp.Instance.ExpandedChangeStarted.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
-            await SetVirtualizedWindowAsync(comp, beforeSpacer: true, spacerSize: 40, spacerSeparation: 40, containerSize: 40);
+            await ScrollPastFirstRowAsync(comp);
             FindTreeItem(comp, "Node B").Should().NotBeNull();
 
             await comp.InvokeAsync(comp.Instance.CompleteExpandedChange);
@@ -1267,6 +1291,17 @@ namespace MudBlazor.UnitTests.Components
             comp.Instance.LoadedParentValues.Should().Equal("Node A");
             originatingItem.Children.Should().ContainSingle(item => item.Value == "Loaded 1");
             otherItem.Children.Should().BeNull();
+
+            // Simulates the browser reporting that the one-row viewport scrolled past the first row.
+            static Task ScrollPastFirstRowAsync(IRenderedComponent<TreeViewVirtualizationServerTest> component)
+            {
+                var virtualize = component.FindComponent<Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize<TreeViewItemContext<string>>>().Instance;
+                var method = virtualize.GetType()
+                    .GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                    .Single(candidate => candidate.Name.EndsWith("OnBeforeSpacerVisible", StringComparison.Ordinal));
+
+                return component.InvokeAsync(() => method.Invoke(virtualize, [40f, 40f, 40f]));
+            }
         }
 
         /// <summary>
@@ -1332,8 +1367,7 @@ namespace MudBlazor.UnitTests.Components
         /// Verifies that a virtual server load completing in standard mode refreshes the replacement tree.
         /// </summary>
         /// <remarks>
-        /// A standard tree does not read <see cref="ITreeItemData{T}.Selected"/> from the backing data unless the item template binds it,
-        /// so the loaded child is not expected to become selected here.
+        /// A standard tree does not read <see cref="ITreeItemData{T}.Selected"/> from the backing data unless the item template binds it, so the loaded child is not expected to become selected here.
         /// </remarks>
         [Test]
         [CancelAfter(5000)]
@@ -1372,7 +1406,7 @@ namespace MudBlazor.UnitTests.Components
 
             try
             {
-                comp.WaitForAssertion(() => comp.Instance.LoadCount.Should().Be(2));
+                await comp.Instance.LoadStarted(2).WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 await comp.InvokeAsync(() => comp.Instance.CompleteServerData(2));
                 await reloadTask.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 comp.Instance.TreeItems[0].Children.Should().ContainSingle(item => item.Value == "Loaded 2");
@@ -1403,7 +1437,7 @@ namespace MudBlazor.UnitTests.Components
 
             try
             {
-                comp.WaitForAssertion(() => comp.Instance.LoadCount.Should().Be(2));
+                await comp.Instance.LoadStarted(2).WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 await comp.InvokeAsync(() => comp.Instance.CompleteServerData(2));
                 await reloadTask.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
 
@@ -1414,7 +1448,7 @@ namespace MudBlazor.UnitTests.Components
                 comp.Instance.TreeItems[0].Children.Should().ContainSingle(item => item.Value == "Loaded 2");
 
                 var currentFailureTask = comp.InvokeAsync(rootItem.Instance.ReloadAsync);
-                comp.WaitForAssertion(() => comp.Instance.LoadCount.Should().Be(3));
+                await comp.Instance.LoadStarted(3).WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 await comp.InvokeAsync(() => comp.Instance.FailServerData(3));
                 var currentFailure = () => currentFailureTask.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 await currentFailure.Should().ThrowAsync<InvalidOperationException>();
@@ -1424,7 +1458,7 @@ namespace MudBlazor.UnitTests.Components
 
                 var retryRootItem = comp.FindComponent<MudTreeViewItem<string>>();
                 var retryTask = comp.InvokeAsync(retryRootItem.Instance.ReloadAsync);
-                comp.WaitForAssertion(() => comp.Instance.LoadCount.Should().Be(4));
+                await comp.Instance.LoadStarted(4).WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 await comp.InvokeAsync(() => comp.Instance.CompleteServerData(4));
                 await retryTask.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 comp.WaitForAssertion(() =>
@@ -1463,7 +1497,7 @@ namespace MudBlazor.UnitTests.Components
                 comp.Instance.LoadCount.Should().Be(1);
 
                 await comp.InvokeAsync(comp.Instance.CompleteItemsChange);
-                var firstOutcome = await Task.WhenAny(earlierReloadTask, comp.Instance.SecondServerDataStarted)
+                var firstOutcome = await Task.WhenAny(earlierReloadTask, comp.Instance.LoadStarted(2))
                     .WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
 
                 firstOutcome.Should().BeSameAs(earlierReloadTask);
@@ -1514,7 +1548,7 @@ namespace MudBlazor.UnitTests.Components
                 comp.Instance.TreeItems[0].Children.Should().BeEmpty();
 
                 await comp.InvokeAsync(comp.Instance.CompleteItemsChange);
-                await comp.Instance.SecondServerDataStarted.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
+                await comp.Instance.LoadStarted(2).WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
                 comp.Instance.LoadCount.Should().Be(2);
 
                 await comp.InvokeAsync(() => comp.Instance.CompleteServerData(2));
@@ -2266,8 +2300,8 @@ namespace MudBlazor.UnitTests.Components
         /// A standard tree must keep a bound selected value whose item has not been loaded yet when another branch loads.
         /// </summary>
         /// <remarks>
-        /// Reconciling selection from the backing <see cref="ITreeItemData{T}.Selected"/> flags is a virtualized concern;
-        /// a standard tree keeps its selection in the item components, so a server load must not prune the pending value.
+        /// Reconciling selection from the backing <see cref="ITreeItemData{T}.Selected"/> flags is a virtualized concern.
+        /// A standard tree keeps its selection in the item components, so a server load must not prune the pending value.
         /// </remarks>
         [Test]
         public async Task TreeView_ServerData_PendingSelectedValueSurvivesUnrelatedLoad()
@@ -2314,13 +2348,12 @@ namespace MudBlazor.UnitTests.Components
         /// A tree rendered inside a virtualized row must not inherit the row's context.
         /// </summary>
         /// <remarks>
-        /// Without the reset, the inner items would treat themselves as virtualized rows of the outer tree: they would skip their
-        /// children and report the outer row's hierarchy.
+        /// Without the reset, the inner items would treat themselves as virtualized rows of the outer tree, skipping their children and reporting the outer row's hierarchy.
         /// </remarks>
         [Test]
         public void TreeViewVirtualize_NestedTreeInRow_DoesNotInheritRowContext()
         {
-            var comp = Context.Render<TreeViewVirtualizedNestedContentTest>();
+            var comp = Context.Render<TreeViewVirtualizedNestedTest>();
 
             var innerItems = comp.FindAll("ul.nested-tree li.mud-treeview-item");
             innerItems.Should().HaveCountGreaterThan(0);
@@ -2416,47 +2449,12 @@ namespace MudBlazor.UnitTests.Components
                 .Single(item => item.FirstElementChild?.TextContent.Contains(text, StringComparison.Ordinal) == true);
         }
 
-        private static IReadOnlyList<IElement> FindTreeItems<TComponent>(IRenderedComponent<TComponent> component, string text)
-            where TComponent : IComponent
-        {
-            return component.FindAll("li.mud-treeview-item")
-                .Where(item => item.FirstElementChild?.TextContent.Contains(text, StringComparison.Ordinal) == true)
-                .ToList();
-        }
-
-        /// <summary>
-        /// Simulates a browser virtualization callback for a specific visible window.
-        /// </summary>
-        private static Task SetVirtualizedWindowAsync(
-            IRenderedComponent<IComponent> component,
-            bool beforeSpacer,
-            float spacerSize,
-            float spacerSeparation,
-            float containerSize)
-        {
-            var virtualize = component.FindComponent<Microsoft.AspNetCore.Components.Web.Virtualization.Virtualize<TreeViewItemContext<string>>>().Instance;
-            var methodName = beforeSpacer ? "OnBeforeSpacerVisible" : "OnAfterSpacerVisible";
-            var method = virtualize.GetType()
-                .GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-                .Single(candidate => candidate.Name.EndsWith(methodName, StringComparison.Ordinal));
-
-            return component.InvokeAsync(() => method.Invoke(virtualize, [spacerSize, spacerSeparation, containerSize]));
-        }
-
         /// <summary>
         /// Gets the values from the flattened virtualized item contexts.
         /// </summary>
         private static IReadOnlyList<string> GetVirtualizedValues(IRenderedComponent<IComponent> component)
         {
             return GetTreeViewItemContexts(component).Select(itemContext => itemContext.Item.Value ?? string.Empty).ToList();
-        }
-
-        /// <summary>
-        /// Gets the text from the flattened virtualized item contexts.
-        /// </summary>
-        private static IReadOnlyList<string> GetVirtualizedTexts(IRenderedComponent<IComponent> component)
-        {
-            return GetTreeViewItemContexts(component).Select(itemContext => itemContext.Item.Text ?? string.Empty).ToList();
         }
 
         /// <summary>
@@ -2498,6 +2496,9 @@ namespace MudBlazor.UnitTests.Components
             }
         }
 
+        /// <summary>
+        /// Counts reads of <see cref="Visible"/> so a test can assert how many times the tree projects the hierarchy.
+        /// </summary>
         private sealed class ProjectionTrackingTreeItemData(string value) : ITreeItemData<string>
         {
             private bool _visible = true;

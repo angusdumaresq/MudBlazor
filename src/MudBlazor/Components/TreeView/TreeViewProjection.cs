@@ -12,8 +12,7 @@ namespace MudBlazor;
 /// </summary>
 /// <typeparam name="T">The type of value associated with each item.</typeparam>
 /// <remarks>
-/// <see cref="Rebuild"/> projects the whole hierarchy so that check-box state and selection can account for collapsed descendants,
-/// and records only expanded, visible items as <see cref="Rows"/>.
+/// <see cref="Rebuild"/> projects the whole hierarchy so that check-box state and selection can account for collapsed descendants, and records only expanded, visible items as <see cref="Rows"/>.
 /// </remarks>
 internal sealed class TreeViewProjection<T>
 {
@@ -233,6 +232,19 @@ internal sealed class TreeViewProjection<T>
         }
 
         return selection.ToList().AsReadOnly();
+
+        static void AddSubtreeValues(ProjectedNode node, List<T> values)
+        {
+            if (node.Value is not null)
+            {
+                values.Add(node.Value);
+            }
+
+            foreach (var child in node.Children)
+            {
+                AddSubtreeValues(child, values);
+            }
+        }
     }
 
     /// <summary>
@@ -249,6 +261,23 @@ internal sealed class TreeViewProjection<T>
         }
 
         return changed;
+
+        static bool ExpandSelectedAncestors(ProjectedNode node, HashSet<T> selection, ref bool changed)
+        {
+            var childContainsSelection = false;
+            foreach (var child in node.Children)
+            {
+                childContainsSelection = ExpandSelectedAncestors(child, selection, ref changed) || childContainsSelection;
+            }
+
+            if (childContainsSelection && node.Item.Expandable && !node.Item.Expanded)
+            {
+                node.Item.Expanded = true;
+                changed = true;
+            }
+
+            return childContainsSelection || (node.Value is not null && selection.Contains(node.Value));
+        }
     }
 
     private List<ProjectedNode> BuildNodes(
@@ -398,36 +427,6 @@ internal sealed class TreeViewProjection<T>
         }
 
         return changed;
-    }
-
-    private static void AddSubtreeValues(ProjectedNode node, List<T> values)
-    {
-        if (node.Value is not null)
-        {
-            values.Add(node.Value);
-        }
-
-        foreach (var child in node.Children)
-        {
-            AddSubtreeValues(child, values);
-        }
-    }
-
-    private static bool ExpandSelectedAncestors(ProjectedNode node, HashSet<T> selection, ref bool changed)
-    {
-        var childContainsSelection = false;
-        foreach (var child in node.Children)
-        {
-            childContainsSelection = ExpandSelectedAncestors(child, selection, ref changed) || childContainsSelection;
-        }
-
-        if (childContainsSelection && node.Item.Expandable && !node.Item.Expanded)
-        {
-            node.Item.Expanded = true;
-            changed = true;
-        }
-
-        return childContainsSelection || (node.Value is not null && selection.Contains(node.Value));
     }
 
     private sealed class ProjectedNode(ITreeItemData<T> item, T? value, ProjectedNode? parent)

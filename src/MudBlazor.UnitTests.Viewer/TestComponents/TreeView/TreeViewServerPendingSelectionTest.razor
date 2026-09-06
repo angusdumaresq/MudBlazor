@@ -1,5 +1,5 @@
 ﻿@using MudBlazor.UnitTests.TestComponents
-<MudTreeView T="string" Items="_items" ServerData="LoadServerData" SelectedValue="@SelectedValue" SelectedValueChanged="OnSelectedValueChanged" Virtualize="@Virtualize" Height="@(Virtualize ? "200px" : null)">
+<MudTreeView T="string" Items="_items" ServerData="LoadServerData" SelectedValue="@SelectedValue" SelectedValueChanged="OnSelectedValueChanged">
     <ItemTemplate>
         <MudTreeViewItem Items="@context.Children" Value="@context.Value" Text="@context.Text" CanExpand="@context.Expandable" Expanded="@context.Expanded" ExpandedChanged="expanded => context.Expanded = expanded" />
     </ItemTemplate>
@@ -14,19 +14,13 @@
     ];
 
     [Parameter]
-    public bool Virtualize { get; set; }
-
-    [Parameter]
     public string? SelectedValue { get; set; } = "B1";
 
     public int SelectedValueChangedCount { get; private set; }
 
-    public string? LastChangedValue { get; private set; }
-
     private void OnSelectedValueChanged(string? value)
     {
         SelectedValueChangedCount++;
-        LastChangedValue = value;
         SelectedValue = value;
     }
 

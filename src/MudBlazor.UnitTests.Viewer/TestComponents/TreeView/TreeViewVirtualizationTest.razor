@@ -1,5 +1,5 @@
-﻿<MudTreeView @ref="_treeView" T="string" Items="_treeItems" Virtualize="@Virtualize" Height="@Height" MaxHeight="@MaxHeight" Dense="@Dense"
-             SelectionMode="@SelectionMode" SelectedValue="@SelectedValue" SelectedValueChanged="OnSelectedValueChangedAsync" SelectedValues="@SelectedValues" SelectedValuesChanged="OnSelectedValuesChangedAsync" AutoSelectParent="@AutoSelectParent"
+﻿<MudTreeView T="string" Items="_treeItems" Virtualize="@Virtualize" Height="@Height" MaxHeight="@MaxHeight" Dense="@Dense"
+             SelectionMode="@SelectionMode" SelectedValue="@SelectedValue" SelectedValueChanged="OnSelectedValueChangedAsync" SelectedValues="@SelectedValues" SelectedValuesChanged="OnSelectedValuesChangedAsync"
              AutoExpand="@AutoExpand" ItemSize="@ItemSize" OverscanCount="@OverscanCount" MaxItemCount="@MaxItemCount">
     <ItemTemplate>
         @if (BindExpanded)
@@ -16,8 +16,7 @@
 </MudTreeView>
 
 @code {
-    private MudTreeView<string> _treeView = null!;
-    private CountingTreeItemCollection _treeItems = new();
+    private readonly CountingTreeItemCollection _treeItems = new();
     private readonly CountingTreeItemCollection _rootChildren = new();
     private readonly CountingTreeItemCollection _childBChildren = new();
 
@@ -41,9 +40,6 @@
 
     [Parameter]
     public IReadOnlyCollection<string>? SelectedValues { get; set; }
-
-    [Parameter]
-    public bool AutoSelectParent { get; set; } = true;
 
     [Parameter]
     public bool AutoExpand { get; set; }
@@ -73,15 +69,7 @@
 
     public int NestedDescendantEnumerationCount => _childBChildren.EnumerationCount;
 
-    public int SelectedValueChangedCount { get; private set; }
-
-    public string? LastSelectedValueChange { get; private set; }
-
     public int ItemSelectedChangedCount { get; private set; }
-
-    public int RenderCount { get; private set; }
-
-    public Task ExpandAllAsync() => _treeView.ExpandAllAsync();
 
     public void ResetNestedDescendantEnumerationCount()
     {
@@ -91,13 +79,6 @@
 
     public void Rerender() => StateHasChanged();
 
-    public void ReplaceItems()
-    {
-        _treeItems = new CountingTreeItemCollection();
-        AddDefaultItems();
-        StateHasChanged();
-    }
-
     private Task OnSelectedValuesChangedAsync(IReadOnlyCollection<string>? values)
     {
         SelectedValues = values;
@@ -106,8 +87,6 @@
 
     private Task OnSelectedValueChangedAsync(string? value)
     {
-        SelectedValueChangedCount++;
-        LastSelectedValueChange = value;
         SelectedValue = value;
         return Task.CompletedTask;
     }
@@ -155,22 +134,10 @@
         });
     }
 
-    protected override void OnAfterRender(bool firstRender)
-    {
-        RenderCount++;
-    }
-
     private void AddDefaultItems()
     {
-        if (_treeItems.Count > 0)
-        {
-            return;
-        }
-
-        _childBChildren.Clear();
         _childBChildren.Add(new TreeItemData<string> { Value = GetValue("Grandchild"), Text = "Grandchild" });
 
-        _rootChildren.Clear();
         _rootChildren.Add(new TreeItemData<string>
         {
             Value = GetValue("Child A"),
@@ -216,8 +183,6 @@
         public ITreeItemData<string> this[int index] => _items[index];
 
         public void Add(ITreeItemData<string> item) => _items.Add(item);
-
-        public void Clear() => _items.Clear();
 
         public void ResetEnumerationCount()
         {

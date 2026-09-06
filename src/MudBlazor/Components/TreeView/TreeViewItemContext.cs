@@ -2,6 +2,8 @@
 // MudBlazor licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System.Runtime.CompilerServices;
+
 namespace MudBlazor;
 
 /// <summary>
@@ -58,9 +60,6 @@ internal sealed class TreeViewItemContext<T>
     /// </remarks>
     public TreeViewRowKey<T> RowKey { get; }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TreeViewItemContext{T}"/> class.
-    /// </summary>
     public TreeViewItemContext(
         ITreeItemData<T> item,
         int depth,
@@ -88,12 +87,11 @@ internal sealed class TreeViewItemContext<T>
 /// Identifies a rendered row by backing item reference.
 /// </summary>
 /// <remarks>
-/// <see cref="Ordinal"/> is zero for the first visible row of an item and increments for repeated references to the same instance,
-/// so that repeated references never produce duplicate render keys.
+/// <see cref="Ordinal"/> is zero for the first visible row of an item and increments for repeated references to the same instance, so that repeated references never produce duplicate render keys.
 /// </remarks>
 internal readonly record struct TreeViewRowKey<T>(ITreeItemData<T> Item, int Ordinal)
 {
     public bool Equals(TreeViewRowKey<T> other) => ReferenceEquals(Item, other.Item) && Ordinal == other.Ordinal;
 
-    public override int GetHashCode() => HashCode.Combine(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(Item), Ordinal);
+    public override int GetHashCode() => HashCode.Combine(RuntimeHelpers.GetHashCode(Item), Ordinal);
 }

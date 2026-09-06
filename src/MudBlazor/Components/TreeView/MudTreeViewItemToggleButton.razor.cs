@@ -28,6 +28,7 @@ public partial class MudTreeViewItemToggleButton : MudComponentBase
     [CascadingParameter(Name = MudTreeViewCascadingValues.ItemContext)]
     private object? CurrentItemContext { get; set; }
 
+    // A virtualized row's expansion is owned by the backing data, so the button reports the toggle instead of keeping a local copy which would go stale whenever the item declines the change.
     private bool IsVirtualizedItem => CurrentItemContext is not null;
 
     protected string Classname =>

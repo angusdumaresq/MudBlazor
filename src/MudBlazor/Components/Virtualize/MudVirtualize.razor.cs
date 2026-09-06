@@ -82,7 +82,8 @@ namespace MudBlazor
         /// that will leave a blank gap below and the user may not be able to see the rest of the content.
         /// </summary>
         /// <remarks>
-        /// This parameter is supported on .NET 9 and later. On .NET 8, it is accepted for API compatibility but has no effect.
+        /// This parameter is supported on .NET 9 and later.
+        /// On .NET 8, it is accepted for API compatibility but has no effect.
         /// </remarks>
         [Parameter]
         public int MaxItemCount { get; set; } = 100;
