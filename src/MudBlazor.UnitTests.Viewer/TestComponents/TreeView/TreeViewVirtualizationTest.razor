@@ -1,17 +1,16 @@
 ﻿<MudTreeView @ref="_treeView" T="string" Items="_treeItems" Virtualize="@Virtualize" Height="@Height" MaxHeight="@MaxHeight" Dense="@Dense"
              SelectionMode="@SelectionMode" SelectedValue="@SelectedValue" SelectedValueChanged="OnSelectedValueChangedAsync" SelectedValues="@SelectedValues" SelectedValuesChanged="OnSelectedValuesChangedAsync" AutoSelectParent="@AutoSelectParent"
-             AutoExpand="@AutoExpand" ItemSize="@ItemSize" OverscanCount="@OverscanCount" MaxItemCount="@MaxItemCount"
-             ExpandOnClick="@ExpandOnClick" Disabled="@Disabled" @attributes="TreeAttributes">
+             AutoExpand="@AutoExpand" ItemSize="@ItemSize" OverscanCount="@OverscanCount" MaxItemCount="@MaxItemCount">
     <ItemTemplate>
         @if (BindExpanded)
         {
-            <MudTreeViewItem Expanded="@context.Expanded" ExpandedChanged="expanded => OnItemExpandedChangedAsync(context, expanded)" Selected="@context.Selected" SelectedChanged="selected => OnItemSelectedChangedAsync(context, selected)" Disabled="@IsItemDisabled(context)"
-                             Items="@context.Children" Value="@context.Value" Text="@context.Text" @attributes="ItemAttributes" />
+            <MudTreeViewItem Expanded="@context.Expanded" ExpandedChanged="expanded => OnItemExpandedChangedAsync(context, expanded)" Selected="@context.Selected" SelectedChanged="selected => OnItemSelectedChangedAsync(context, selected)"
+                             Items="@context.Children" Value="@context.Value" Text="@context.Text" />
         }
         else
         {
-            <MudTreeViewItem Expanded="@context.Expanded" Selected="@context.Selected" SelectedChanged="selected => OnItemSelectedChangedAsync(context, selected)" Disabled="@IsItemDisabled(context)"
-                             Items="@context.Children" Value="@context.Value" Text="@context.Text" @attributes="ItemAttributes" />
+            <MudTreeViewItem Expanded="@context.Expanded" Selected="@context.Selected" SelectedChanged="selected => OnItemSelectedChangedAsync(context, selected)"
+                             Items="@context.Children" Value="@context.Value" Text="@context.Text" />
         }
     </ItemTemplate>
 </MudTreeView>
@@ -50,9 +49,6 @@
     public bool AutoExpand { get; set; }
 
     [Parameter]
-    public bool ExpandOnClick { get; set; }
-
-    [Parameter]
     public float ItemSize { get; set; }
 
     [Parameter]
@@ -71,25 +67,7 @@
     public bool UseTextOnlyValues { get; set; }
 
     [Parameter]
-    public bool Disabled { get; set; }
-
-    [Parameter]
-    public string? DisabledItemValue { get; set; }
-
-    [Parameter]
-    public IReadOnlyCollection<string>? DisabledItemValues { get; set; }
-
-    [Parameter]
-    public int DeepTreeDepth { get; set; }
-
-    [Parameter]
     public bool DuplicateSharedItem { get; set; }
-
-    [Parameter]
-    public IReadOnlyDictionary<string, object?>? TreeAttributes { get; set; }
-
-    [Parameter]
-    public IReadOnlyDictionary<string, object?>? ItemAttributes { get; set; }
 
     public IReadOnlyList<ITreeItemData<string>> TreeItems => _treeItems;
 
@@ -113,51 +91,10 @@
 
     public void Rerender() => StateHasChanged();
 
-    public void DisableTree()
-    {
-        Disabled = true;
-        StateHasChanged();
-    }
-
     public void ReplaceItems()
     {
         _treeItems = new CountingTreeItemCollection();
         AddDefaultItems();
-        StateHasChanged();
-    }
-
-    public void RemoveChildA()
-    {
-        var removedItem = _rootChildren.Single(item => item.Value == "Child A");
-        _rootChildren.Remove(removedItem);
-        StateHasChanged();
-    }
-
-    public void ReparentChildAUnderCollapsedChildB()
-    {
-        var childA = _rootChildren.Single(item => item.Value == "Child A");
-        var childB = _rootChildren.Single(item => item.Value == "Child B");
-        _rootChildren.Remove(childA);
-        _childBChildren.Add(childA);
-        childB.Expanded = false;
-        StateHasChanged();
-    }
-
-    public void CollapseRootExternally()
-    {
-        _treeItems.Single(item => item.Value == "Root").Expanded = false;
-        StateHasChanged();
-    }
-
-    public void ExpandChildBExternally()
-    {
-        _rootChildren.Single(item => item.Value == "Child B").Expanded = true;
-        StateHasChanged();
-    }
-
-    public void InsertBeforeDeepTree()
-    {
-        _treeItems.Insert(0, new TreeItemData<string> { Value = "Inserted", Text = "Inserted" });
         StateHasChanged();
     }
 
@@ -193,12 +130,6 @@
         if (DuplicateSharedItem)
         {
             AddDuplicateSharedItemTree();
-            return;
-        }
-
-        if (DeepTreeDepth > 0)
-        {
-            AddDeepTree();
             return;
         }
 
@@ -273,36 +204,6 @@
         return UseTextOnlyValues ? null : text;
     }
 
-    private bool IsItemDisabled(ITreeItemData<string> item)
-    {
-        return (DisabledItemValue is not null && string.Equals(item.Value, DisabledItemValue, StringComparison.Ordinal))
-            || DisabledItemValues?.Contains(item.Value ?? string.Empty) == true;
-    }
-
-    private void AddDeepTree()
-    {
-        TreeItemData<string>? child = null;
-        for (var index = DeepTreeDepth - 1; index >= 0; index--)
-        {
-            CountingTreeItemCollection? children = null;
-            if (child is not null)
-            {
-                children = new CountingTreeItemCollection();
-                children.Add(child);
-            }
-
-            child = new TreeItemData<string>
-            {
-                Value = $"Node {index}",
-                Text = $"Node {index}",
-                Expanded = true,
-                Children = children
-            };
-        }
-
-        _treeItems.Add(child!);
-    }
-
     private sealed class CountingTreeItemCollection : IReadOnlyList<ITreeItemData<string>>
     {
         private readonly List<ITreeItemData<string>> _items = [];
@@ -316,11 +217,7 @@
 
         public void Add(ITreeItemData<string> item) => _items.Add(item);
 
-        public void Insert(int index, ITreeItemData<string> item) => _items.Insert(index, item);
-
         public void Clear() => _items.Clear();
-
-        public bool Remove(ITreeItemData<string> item) => _items.Remove(item);
 
         public void ResetEnumerationCount()
         {

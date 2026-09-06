@@ -165,9 +165,7 @@ class MudKeyInterceptor {
             return false;
         const targetClass = self._options.targetClass;
         if (!targetClass)
-            // A container which manages its own virtual cursor only wants the keys typed while it is focused itself,
-            // not those typed into an input or button rendered inside it.
-            return !self._options.ignoreDescendantEvents || args.target === self._element;
+            return true;
 
         let current = args.target;
         if (current?.nodeType !== Node.ELEMENT_NODE)

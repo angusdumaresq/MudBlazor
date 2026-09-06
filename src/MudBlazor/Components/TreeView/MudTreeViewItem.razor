@@ -4,15 +4,11 @@
 
 @if (IsVirtualizedItem || Visible)
 {
-    <li role="@(IsVirtualizedItem ? "treeitem" : null)"
-        aria-level="@(IsVirtualizedItem ? (int?)(CurrentItemContext!.Depth + 1) : null)"
+    @* Virtualized rows are flat siblings, so the hierarchy is exposed through level and position instead of nested lists. *@
+    <li aria-level="@(IsVirtualizedItem ? (int?)(CurrentItemContext!.Depth + 1) : null)"
         aria-posinset="@(IsVirtualizedItem ? (int?)CurrentItemContext!.PositionInSet : null)"
         aria-setsize="@(IsVirtualizedItem ? (int?)CurrentItemContext!.SetSize : null)"
-        aria-expanded="@GetAriaExpanded()"
-        aria-selected="@GetAriaSelected()"
-        aria-checked="@GetAriaChecked()"
-        aria-disabled="@(IsVirtualizedItem && GetDisabled() ? "true" : null)"
-        @attributes="GetItemAttributes()" class="@Classname" style="@Stylename">
+        @attributes="UserAttributes" class="@Classname" style="@Stylename">
         <div class="@ContentClassname" @onclick="OnItemClickedAsync" @onclick:stopPropagation="true" @ondblclick="OnItemDoubleClickedAsync" @ondblclick:stopPropagation="true">
             @if (Content != null)
             {
@@ -25,8 +21,7 @@
                 @if (MultiSelection)
                 {
                     <MudCheckBox T="bool?" TriState Class="mud-treeview-item-checkbox" CheckedIcon="@CheckedIcon" UncheckedIcon="@UncheckedIcon" IndeterminateIcon="@GetIndeterminateIcon()"
-                                 @bind-Value:get="GetCheckBoxStateTriState()" @bind-Value:set="@(x => OnCheckboxChangedAsync())" Disabled="@GetDisabled()" ReadOnly="@GetReadOnly()"
-                                 KeyboardEnabled="@(!IsVirtualizedItem)" tabindex="@(IsVirtualizedItem ? "-1" : null)" aria-hidden="@(IsVirtualizedItem ? "true" : null)"></MudCheckBox>
+                                 @bind-Value:get="GetCheckBoxStateTriState()" @bind-Value:set="@(x => OnCheckboxChangedAsync())" Disabled="@GetDisabled()" ReadOnly="@GetReadOnly()"></MudCheckBox>
                 }
 
                 @if (HasIcon)

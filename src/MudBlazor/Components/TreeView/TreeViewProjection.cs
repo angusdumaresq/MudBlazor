@@ -13,7 +13,7 @@ namespace MudBlazor;
 /// <typeparam name="T">The type of value associated with each item.</typeparam>
 /// <remarks>
 /// <see cref="Rebuild"/> projects the whole hierarchy so that check-box state and selection can account for collapsed descendants,
-/// and records only expanded, visible items as <see cref="Rows"/>. Rows are found by backing item reference.
+/// and records only expanded, visible items as <see cref="Rows"/>.
 /// </remarks>
 internal sealed class TreeViewProjection<T>
 {
@@ -23,7 +23,6 @@ internal sealed class TreeViewProjection<T>
     private IReadOnlyList<ProjectedNode> _roots = [];
     private List<ProjectedNode> _nodes = [];
     private Dictionary<TreeViewItemContext<T>, ProjectedNode> _rowNodes = new(ReferenceEqualityComparer.Instance);
-    private Dictionary<ITreeItemData<T>, TreeViewItemContext<T>> _rowsByItem = new(ReferenceEqualityComparer.Instance);
     private Dictionary<TreeViewRowKey<T>, TreeViewItemContext<T>> _rowsByKey = [];
     private Dictionary<ValueKey, List<ProjectedNode>> _nodesByValue = [];
     private HashSet<T> _representedValues = [];
@@ -51,7 +50,6 @@ internal sealed class TreeViewProjection<T>
         _comparer = comparer;
         _nodes = [];
         _rowNodes = new Dictionary<TreeViewItemContext<T>, ProjectedNode>(ReferenceEqualityComparer.Instance);
-        _rowsByItem = new Dictionary<ITreeItemData<T>, TreeViewItemContext<T>>(ReferenceEqualityComparer.Instance);
         _rowsByKey = [];
         _nodesByValue = new Dictionary<ValueKey, List<ProjectedNode>>(new ValueKeyEqualityComparer(comparer));
         _representedValues = new HashSet<T>(comparer);
@@ -61,17 +59,8 @@ internal sealed class TreeViewProjection<T>
 
         var rows = new List<TreeViewItemContext<T>>();
         var rowOrdinals = new Dictionary<ITreeItemData<T>, int>(ReferenceEqualityComparer.Instance);
-        AddVisibleRows(_roots, null, 0, rows, rowOrdinals);
+        AddVisibleRows(_roots, 0, rows, rowOrdinals);
         Rows = rows.AsReadOnly();
-    }
-
-    /// <summary>
-    /// Finds the first visible row for a backing item by reference identity.
-    /// </summary>
-    /// <returns>The row, or <c>null</c> when the item is not visible.</returns>
-    public TreeViewItemContext<T>? Find(ITreeItemData<T>? item)
-    {
-        return item is not null && _rowsByItem.TryGetValue(item, out var row) ? row : null;
     }
 
     /// <summary>
@@ -81,17 +70,6 @@ internal sealed class TreeViewProjection<T>
     public TreeViewItemContext<T>? FindRow(TreeViewRowKey<T> rowKey)
     {
         return _rowsByKey.TryGetValue(rowKey, out var row) ? row : null;
-    }
-
-    /// <summary>
-    /// Finds the first visible child row of a row.
-    /// </summary>
-    public TreeViewItemContext<T>? FindFirstChild(TreeViewItemContext<T> parent)
-    {
-        ArgumentNullException.ThrowIfNull(parent);
-
-        var index = parent.Index + 1;
-        return index < Rows.Count && ReferenceEquals(Rows[index].Parent, parent) ? Rows[index] : null;
     }
 
     /// <summary>
@@ -336,7 +314,6 @@ internal sealed class TreeViewProjection<T>
 
     private void AddVisibleRows(
         IReadOnlyList<ProjectedNode> nodes,
-        TreeViewItemContext<T>? parent,
         int depth,
         List<TreeViewItemContext<T>> rows,
         Dictionary<ITreeItemData<T>, int> rowOrdinals)
@@ -349,11 +326,9 @@ internal sealed class TreeViewProjection<T>
             rowOrdinals[node.Item] = ordinal + 1;
             var row = new TreeViewItemContext<T>(
                 node.Item,
-                parent,
                 depth,
                 index + 1,
                 visibleNodes.Count,
-                rows.Count,
                 node.Children.Any(child => child.Item.Visible),
                 node.HasSelectableValues,
                 node.IsSelected,
@@ -361,12 +336,11 @@ internal sealed class TreeViewProjection<T>
                 new TreeViewRowKey<T>(node.Item, ordinal));
             rows.Add(row);
             _rowNodes.Add(row, node);
-            _rowsByItem.TryAdd(node.Item, row);
             _rowsByKey.Add(row.RowKey, row);
 
             if (node.Item.Expanded)
             {
-                AddVisibleRows(node.Children, row, depth + 1, rows, rowOrdinals);
+                AddVisibleRows(node.Children, depth + 1, rows, rowOrdinals);
             }
         }
     }

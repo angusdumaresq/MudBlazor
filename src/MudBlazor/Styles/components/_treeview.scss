@@ -66,19 +66,6 @@ $treeview-indent: 17px;
   }
 }
 
-// A virtualized tree keeps keyboard focus on the list and exposes the active row through aria-activedescendant,
-// so the focus ring is drawn on the active row instead of the list.
-.mud-treeview-virtualized {
-  &:focus-visible {
-    outline: none;
-  }
-
-  &:focus-visible > .mud-treeview-item-active > .mud-treeview-item-content {
-    outline: 2px solid var(--mud-palette-primary);
-    outline-offset: -2px;
-  }
-}
-
 .mud-treeview-item-content {
   width: 100%;
   display: flex;

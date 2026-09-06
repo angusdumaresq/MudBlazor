@@ -108,14 +108,6 @@ class MudScrollManager {
             return;
         }
 
-        const scrollBehavior = behaviorString === 'smooth' ? 'smooth' : 'auto';
-        const renderedTarget = document.getElementById(targetItemId);
-        if (renderedTarget) {
-            // The item is already rendered, so only ensure it is visible instead of jumping to its estimated position.
-            renderedTarget.scrollIntoView({ behavior: scrollBehavior, block: 'nearest', inline: 'nearest' });
-            return;
-        }
-
         // Calculate initial estimated scroll position
         const isScrollable = container.scrollHeight > container.clientHeight || container.scrollWidth > container.clientWidth;
         const actualContainer = (container === document.documentElement || container === document.body) && !isScrollable ? window : container;
@@ -131,6 +123,7 @@ class MudScrollManager {
             requestAnimationFrame(() => {
                 const targetElement = document.getElementById(targetItemId);
                 if (targetElement) {
+                    const scrollBehavior = behaviorString === 'smooth' ? 'smooth' : 'auto';
                     targetElement.scrollIntoView({ behavior: scrollBehavior, block: 'nearest', inline: 'nearest' });
                 }
             });

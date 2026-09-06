@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using MudBlazor.Extensions;
-using MudBlazor.Services;
 using MudBlazor.State;
 using MudBlazor.Utilities;
 
@@ -16,7 +15,7 @@ namespace MudBlazor
     /// <typeparam name="T">The type of item to display.</typeparam>
     /// <seealso cref="MudTreeViewItem{T}"/>
     /// <seealso cref="MudTreeViewItemToggleButton"/>
-    public partial class MudTreeView<T> : MudComponentBase, IAsyncDisposable
+    public partial class MudTreeView<T> : MudComponentBase, IDisposable
     {
         private const float DefaultItemSize = 40f;
         private const float DefaultDenseItemSize = 26f;
@@ -58,29 +57,17 @@ namespace MudBlazor
 
         private HashSet<T> _selection;
         private readonly HashSet<MudTreeViewItem<T>> _childItems = new();
-        private readonly string _treeElementId = Identifier.Create("mud-treeview");
         private readonly TreeViewProjection<T> _projection = new();
         // ServerData load state belongs to the backing node object, not the rendered component instance.
         // When the parent replaces Items with new node objects, the old entries can disappear with them.
         private readonly TreeViewServerLoadState<T> _serverLoadState = new();
         private ElementReference _treeElement;
-        private string? _subscribedElementId;
-        private int _keyInterceptorUpdateVersion;
         private bool _isFirstRender = true;
         private bool _isDisposed;
         private bool _hasLoggedInvalidVirtualizeConfiguration;
         private bool _projectionDirty = true;
         private bool _reconcileSelection;
         private bool _spacersMarked;
-        private bool _wasVirtualized;
-        private IReadOnlyCollection<ITreeItemData<T>>? _lastVirtualizedItems;
-        // The row which owns aria-activedescendant. It is tracked by backing item so that it survives scrolling and re-rendering.
-        private ITreeItemData<T>? _activeItem;
-        private TreeViewItemContext<T>? _activeRow;
-        // Whether the active row was chosen by the tree rather than by the user, so it may still follow the selection.
-        private bool _activeItemIsDefault;
-        private bool _scrollToActiveItem;
-        private (ITreeItemData<T> Item, bool SelectOnly)? _pendingActivation;
         internal bool MultiSelection => SelectionMode == SelectionMode.MultiSelection;
         private bool ToggleSelection => SelectionMode == SelectionMode.ToggleSelection;
 
@@ -104,12 +91,6 @@ namespace MudBlazor
 
         [CascadingParameter]
         private MudTreeView<T> MudTreeRoot { get; set; }
-
-        [Inject]
-        private IKeyInterceptorService KeyInterceptorService { get; set; } = null!;
-
-        [Inject]
-        private IScrollManager ScrollManager { get; set; } = null!;
 
         [Inject]
         private IJSRuntime JSRuntime { get; set; } = null!;
@@ -440,26 +421,11 @@ namespace MudBlazor
 
             if (MudTreeRoot == this)
             {
-                var isVirtualized = HasValidVirtualizationConfiguration;
                 _projectionDirty = true;
-                if (isVirtualized)
+                if (HasValidVirtualizationConfiguration)
                 {
                     _reconcileSelection = true;
-                    if (!_wasVirtualized || !ReferenceEquals(_lastVirtualizedItems, Items))
-                    {
-                        _activeItem = null;
-                        _activeRow = null;
-                        _activeItemIsDefault = false;
-                    }
                 }
-                else
-                {
-                    _pendingActivation = null;
-                    _scrollToActiveItem = false;
-                }
-
-                _wasVirtualized = isVirtualized;
-                _lastVirtualizedItems = Items;
             }
 
             if (Virtualize && !HasValidVirtualizationConfiguration && !_hasLoggedInvalidVirtualizeConfiguration)
@@ -518,8 +484,6 @@ namespace MudBlazor
                     RefreshProjection();
                 }
 
-                await UpdateKeyInterceptorAsync();
-
                 if (IsVirtualized)
                 {
                     if (!_spacersMarked)
@@ -530,11 +494,6 @@ namespace MudBlazor
                             _treeElement,
                             ":scope > li:not(.mud-treeview-item)",
                             new Dictionary<string, string> { ["role"] = "presentation", ["aria-hidden"] = "true" });
-                    }
-
-                    if (_scrollToActiveItem)
-                    {
-                        await ScrollActiveItemIntoViewAsync();
                     }
                 }
                 else
@@ -704,8 +663,6 @@ namespace MudBlazor
             return UpdateItemsAsync();
         }
 
-        #region Virtualization
-
         [MemberNotNullWhen(true, nameof(ItemTemplate), nameof(Items))]
         private bool HasValidVirtualizationConfiguration =>
             Virtualize
@@ -734,23 +691,10 @@ namespace MudBlazor
             }
         }
 
-        /// <summary>
-        /// The row which currently owns <c>aria-activedescendant</c>, or <c>null</c> when the active item is not visible.
-        /// </summary>
-        private TreeViewItemContext<T>? ActiveRow
-        {
-            get
-            {
-                _ = Rows;
-                return _activeRow;
-            }
-        }
-
         private void RebuildProjection()
         {
             _projection.Rebuild(Items, GetSelection(), Comparer);
             _projectionDirty = false;
-            ReconcileActiveItem();
         }
 
         /// <summary>
@@ -775,359 +719,9 @@ namespace MudBlazor
             }
         }
 
-        /// <summary>
-        /// Keeps the active item pointing at a visible row after the projection changed.
-        /// </summary>
-        /// <remarks>
-        /// An item hidden in place (collapsed or filtered) hands the active row to its nearest visible ancestor;
-        /// an item which was removed or moved hands it to the row at its previous position.
-        /// A tree without an active item activates its first selected row, or its first row.
-        /// </remarks>
-        private void ReconcileActiveItem()
-        {
-            var rows = _projection.Rows;
-            if (_activeItem is not null)
-            {
-                var row = _projection.Find(_activeItem);
-                if (row is null)
-                {
-                    row = FindRecoveryRow(_activeRow);
-                    _pendingActivation = null;
-                }
-
-                _activeItem = row?.Item;
-                _activeRow = row;
-                if (row is null)
-                {
-                    _scrollToActiveItem = false;
-                }
-            }
-
-            if (rows.Count > 0 && (_activeItem is null || (_activeItemIsDefault && _activeRow?.IsSelected != true)))
-            {
-                var selectedRow = rows.FirstOrDefault(row => row.IsSelected);
-                var defaultRow = selectedRow ?? rows[0];
-                if (!ReferenceEquals(defaultRow, _activeRow))
-                {
-                    _activeRow = defaultRow;
-                    _activeItem = defaultRow.Item;
-                    _scrollToActiveItem = selectedRow is not null;
-                }
-
-                _activeItemIsDefault = true;
-            }
-        }
-
-        private TreeViewItemContext<T>? FindRecoveryRow(TreeViewItemContext<T>? previousRow)
-        {
-            var rows = _projection.Rows;
-            if (previousRow is null)
-            {
-                return null;
-            }
-
-            var previousParent = previousRow.Parent;
-            var remainsInPreviousHierarchy = previousParent is null
-                ? Items?.Any(item => ReferenceEquals(item, previousRow.Item)) == true
-                : previousParent.Item.Children?.Any(item => ReferenceEquals(item, previousRow.Item)) == true;
-            if (remainsInPreviousHierarchy)
-            {
-                for (var ancestor = previousParent; ancestor is not null; ancestor = ancestor.Parent)
-                {
-                    if (_projection.Find(ancestor.Item) is { } visibleAncestor)
-                    {
-                        return visibleAncestor;
-                    }
-                }
-            }
-
-            return rows.Count == 0
-                ? null
-                : rows[Math.Clamp(previousRow.Index, 0, rows.Count - 1)];
-        }
-
-        private string GetEffectiveElementId()
-        {
-            if (UserAttributes.TryGetValue("id", out var idValue) && idValue is not null)
-            {
-                var id = idValue.ToString();
-                if (!string.IsNullOrWhiteSpace(id))
-                {
-                    return id;
-                }
-            }
-
-            return _treeElementId;
-        }
-
-        internal string GetItemElementId(TreeViewItemContext<T> row) => $"{GetEffectiveElementId()}_item_{row.Index}";
-
-        private string? GetActiveDescendantId()
-        {
-            return IsVirtualized && ActiveRow is { } row ? GetItemElementId(row) : null;
-        }
-
         private float GetEffectiveItemSize() => ItemSize > 0 ? ItemSize : Dense ? DefaultDenseItemSize : DefaultItemSize;
 
         internal TreeViewServerLoadEntry GetServerLoadEntry(ITreeItemData<T> item) => _serverLoadState.GetEntry(item);
-
-        /// <summary>
-        /// Returns whether a row owns <c>aria-activedescendant</c>.
-        /// </summary>
-        internal bool IsActiveItem(TreeViewItemContext<T> row) => ActiveRow is { } activeRow && activeRow.RowKey.Equals(row.RowKey);
-
-        private MudTreeViewItem<T>? FindRenderedItem(TreeViewItemContext<T> row)
-        {
-            return _childItems.FirstOrDefault(item => item.CurrentItemContext is { } context && context.RowKey.Equals(row.RowKey));
-        }
-
-        /// <summary>
-        /// Makes a row the active descendant.
-        /// </summary>
-        /// <param name="row">The row to activate.</param>
-        /// <param name="scrollIntoView">Whether the row is scrolled into view after the next render.</param>
-        private void SetActiveItem(TreeViewItemContext<T> row, bool scrollIntoView)
-        {
-            _pendingActivation = null;
-            _scrollToActiveItem = scrollIntoView;
-            _activeItemIsDefault = false;
-            if (IsActiveItem(row))
-            {
-                return;
-            }
-
-            _activeItem = row.Item;
-            _activeRow = row;
-            StateHasChanged();
-        }
-
-        /// <summary>
-        /// Handles a pointer interaction with a rendered row: the row becomes active and keyboard focus returns to the tree.
-        /// </summary>
-        internal async Task OnItemPointerInteractionAsync(MudTreeViewItem<T> item)
-        {
-            if (!IsVirtualized || Disabled || item.CurrentItemContext is not { } row)
-            {
-                return;
-            }
-
-            SetActiveItem(row, scrollIntoView: false);
-            // Row chrome is not a tab stop, so a click on it returns focus to the tree. A tab stop rendered inside the row
-            // by the item template (an input, a button) keeps the focus it just received.
-            await JSRuntime.InvokeVoidAsyncIgnoreErrors("mudElementRef.focusUnlessDescendantFocused", _treeElement);
-        }
-
-        /// <summary>
-        /// Handles a rendered row: the active row is scrolled into view and a queued keyboard activation is run once its row exists.
-        /// </summary>
-        internal async Task OnItemRenderedAsync(MudTreeViewItem<T> item)
-        {
-            if (_isDisposed || !IsVirtualized || item.CurrentItemContext is not { } row || !IsActiveItem(row))
-            {
-                return;
-            }
-
-            if (_scrollToActiveItem)
-            {
-                _scrollToActiveItem = false;
-                await ScrollManager.ScrollToVirtualizedItemAsync(GetEffectiveElementId(), row.Index, GetEffectiveItemSize(), GetItemElementId(row));
-            }
-
-            if (_pendingActivation is { } pending && ReferenceEquals(pending.Item, row.Item))
-            {
-                _pendingActivation = null;
-                await (pending.SelectOnly ? item.SelectFromKeyboardAsync() : item.ActivateFromKeyboardAsync());
-            }
-        }
-
-        private async Task ScrollActiveItemIntoViewAsync()
-        {
-            if (ActiveRow is not { } row)
-            {
-                _scrollToActiveItem = false;
-                return;
-            }
-
-            if (FindRenderedItem(row) is not null)
-            {
-                _scrollToActiveItem = false;
-            }
-
-            // When the row is not rendered yet the scroll is repeated on every render until it materializes.
-            await ScrollManager.ScrollToVirtualizedItemAsync(GetEffectiveElementId(), row.Index, GetEffectiveItemSize(), GetItemElementId(row));
-        }
-
-        private bool CanHandleKeys() => IsVirtualized && !Disabled && Rows.Count > 0;
-
-        private Task MoveActiveItemAsync(Func<ReadOnlyCollection<TreeViewItemContext<T>>, TreeViewItemContext<T>?, TreeViewItemContext<T>?> navigate)
-        {
-            var rows = Rows;
-            var target = navigate(rows, ActiveRow);
-            if (target is not null)
-            {
-                SetActiveItem(target, scrollIntoView: true);
-            }
-
-            return Task.CompletedTask;
-        }
-
-        private async Task HandleArrowRightAsync()
-        {
-            _pendingActivation = null;
-            if (ActiveRow is not { } row)
-            {
-                return;
-            }
-
-            var item = FindRenderedItem(row);
-            if (item is null)
-            {
-                _scrollToActiveItem = true;
-                StateHasChanged();
-                return;
-            }
-
-            if (!item.IsExpanded())
-            {
-                if (item.CanExpandFromKeyboard())
-                {
-                    await item.SetExpandedFromKeyboardAsync(true);
-                }
-                return;
-            }
-
-            if (ActiveRow is { } expandedRow && _projection.FindFirstChild(expandedRow) is { } firstChild)
-            {
-                SetActiveItem(firstChild, scrollIntoView: true);
-            }
-        }
-
-        private async Task HandleArrowLeftAsync()
-        {
-            _pendingActivation = null;
-            if (ActiveRow is not { } row)
-            {
-                return;
-            }
-
-            var item = FindRenderedItem(row);
-            if (item?.CanExpandFromKeyboard() == true && item.IsExpanded())
-            {
-                await item.SetExpandedFromKeyboardAsync(false);
-                return;
-            }
-
-            if (row.Parent is not null)
-            {
-                SetActiveItem(row.Parent, scrollIntoView: true);
-            }
-        }
-
-        private async Task ActivateActiveItemAsync(bool selectOnly)
-        {
-            if (ActiveRow is not { } row)
-            {
-                return;
-            }
-
-            var item = FindRenderedItem(row);
-            if (item is not null)
-            {
-                _pendingActivation = null;
-                await (selectOnly ? item.SelectFromKeyboardAsync() : item.ActivateFromKeyboardAsync());
-                return;
-            }
-
-            // The row is scrolled out of the render window: bring it back and activate it once it renders.
-            _pendingActivation = (row.Item, selectOnly);
-            _scrollToActiveItem = true;
-            StateHasChanged();
-        }
-
-        private async Task UpdateKeyInterceptorAsync()
-        {
-            var updateVersion = ++_keyInterceptorUpdateVersion;
-            if (_isDisposed)
-            {
-                return;
-            }
-
-            var effectiveElementId = GetEffectiveElementId();
-            if (!IsVirtualized || Disabled)
-            {
-                if (!string.IsNullOrEmpty(_subscribedElementId))
-                {
-                    var subscribedElementId = _subscribedElementId;
-                    _subscribedElementId = null;
-                    await KeyInterceptorService.UnsubscribeAsync(subscribedElementId);
-                }
-
-                return;
-            }
-
-            if (string.Equals(_subscribedElementId, effectiveElementId, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            if (!string.IsNullOrEmpty(_subscribedElementId))
-            {
-                var subscribedElementId = _subscribedElementId;
-                _subscribedElementId = null;
-                await KeyInterceptorService.UnsubscribeAsync(subscribedElementId);
-                if (_isDisposed || updateVersion != _keyInterceptorUpdateVersion)
-                {
-                    return;
-                }
-            }
-
-            var options = new KeyInterceptorOptions
-            {
-                // Keys are handled only while the tree element itself has focus; a tab stop rendered inside a row by the
-                // item template keeps its own keyboard behavior.
-                IgnoreDescendantEvents = true,
-                Keys =
-                [
-                    new(" ", subscribeDown: true, preventDown: "key+none", preventUp: "key+none"),
-                    new("ArrowDown", subscribeDown: true, preventDown: "key+none"),
-                    new("ArrowUp", subscribeDown: true, preventDown: "key+none"),
-                    new("ArrowRight", subscribeDown: true, preventDown: "key+none"),
-                    new("ArrowLeft", subscribeDown: true, preventDown: "key+none"),
-                    new("Home", subscribeDown: true, preventDown: "key+none"),
-                    new("End", subscribeDown: true, preventDown: "key+none"),
-                    new("Enter", subscribeDown: true, preventDown: "key+none"),
-                    new("NumpadEnter", subscribeDown: true, preventDown: "key+none")
-                ]
-            };
-
-            await KeyInterceptorService.SubscribeAsync(effectiveElementId, options, keys => keys
-                .When(CanHandleKeys, builder => builder
-                    .OnKeyDown("ArrowDown", () => MoveActiveItemAsync(static (rows, current) => rows[Math.Clamp((current?.Index ?? -1) + 1, 0, rows.Count - 1)]))
-                    .OnKeyDown("ArrowUp", () => MoveActiveItemAsync(static (rows, current) => rows[Math.Clamp((current?.Index ?? rows.Count) - 1, 0, rows.Count - 1)]))
-                    .OnKeyDown("Home", () => MoveActiveItemAsync(static (rows, _) => rows[0]))
-                    .OnKeyDown("End", () => MoveActiveItemAsync(static (rows, _) => rows[^1]))
-                    .OnKeyDown("ArrowRight", HandleArrowRightAsync)
-                    .OnKeyDown("ArrowLeft", HandleArrowLeftAsync)
-                    .OnKeyDown(" ", () => ActivateActiveItemAsync(selectOnly: true))
-                    .OnKeyDownAny(["Enter", "NumpadEnter"], () => ActivateActiveItemAsync(selectOnly: false))));
-
-            if (_isDisposed
-                || updateVersion != _keyInterceptorUpdateVersion
-                || !IsVirtualized
-                || Disabled
-                || !string.Equals(effectiveElementId, GetEffectiveElementId(), StringComparison.Ordinal))
-            {
-                if (!string.Equals(_subscribedElementId, effectiveElementId, StringComparison.Ordinal))
-                {
-                    await KeyInterceptorService.UnsubscribeAsync(effectiveElementId);
-                }
-                return;
-            }
-
-            _subscribedElementId = effectiveElementId;
-        }
-
-        #endregion
 
         internal async Task OnItemClickAsync(MudTreeViewItem<T> clickedItem)
         {
@@ -1472,24 +1066,11 @@ namespace MudBlazor
         }
 
         /// <summary>
-        /// Releases resources used by this component.
+        /// Marks this component as disposed so that a <see cref="ServerData"/> load which completes afterwards is discarded.
         /// </summary>
-        public async ValueTask DisposeAsync()
+        public void Dispose()
         {
-            if (_isDisposed)
-            {
-                return;
-            }
-
             _isDisposed = true;
-            _keyInterceptorUpdateVersion++;
-            if (IsJSRuntimeAvailable && !string.IsNullOrEmpty(_subscribedElementId))
-            {
-                var subscribedElementId = _subscribedElementId;
-                _subscribedElementId = null;
-                await KeyInterceptorService.UnsubscribeAsync(subscribedElementId);
-            }
-
             GC.SuppressFinalize(this);
         }
     }

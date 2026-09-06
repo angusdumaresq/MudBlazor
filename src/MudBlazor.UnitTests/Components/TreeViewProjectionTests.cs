@@ -40,29 +40,7 @@ public class TreeViewProjectionTests
         projection.Rows.Select(row => row.Depth).Should().Equal(0, 1, 1, 0);
         projection.Rows.Select(row => row.PositionInSet).Should().Equal(1, 1, 2, 2);
         projection.Rows.Select(row => row.SetSize).Should().Equal(2, 2, 2, 2);
-        projection.Rows.Select(row => row.Index).Should().Equal(0, 1, 2, 3);
-        projection.Find(visibleChild)!.Parent.Should().BeSameAs(projection.Find(root));
-        projection.Find(collapsedGrandchild).Should().BeNull();
-        projection.FindFirstChild(projection.Find(root)!).Should().BeSameAs(projection.Find(visibleChild));
-        projection.FindFirstChild(projection.Find(otherRoot)!).Should().BeNull();
-    }
-
-    /// <summary>
-    /// Verifies that row lookup uses backing-item reference identity rather than value equality.
-    /// </summary>
-    [Test]
-    public void FindUsesBackingItemReferenceIdentity()
-    {
-        var first = new TreeItemData<string> { Value = "Same" };
-        var second = new TreeItemData<string> { Value = "Same" };
-        var equalButAbsent = new TreeItemData<string> { Value = "Same" };
-        var projection = new TreeViewProjection<string>();
-
-        projection.Rebuild([first, second], [], StringComparer.Ordinal);
-
-        projection.Find(first)!.Item.Should().BeSameAs(first);
-        projection.Find(second)!.Item.Should().BeSameAs(second);
-        projection.Find(equalButAbsent).Should().BeNull();
+        projection.Rows.Should().NotContain(row => ReferenceEquals(row.Item, collapsedGrandchild));
     }
 
     /// <summary>
@@ -81,7 +59,6 @@ public class TreeViewProjectionTests
         keys.Should().OnlyHaveUniqueItems();
         keys.Should().Contain(new TreeViewRowKey<string>(shared, 0));
         keys.Should().Contain(new TreeViewRowKey<string>(shared, 1));
-        projection.Find(shared).Should().BeSameAs(projection.Rows[0]);
         projection.FindRow(new TreeViewRowKey<string>(shared, 1)).Should().BeSameAs(projection.Rows[2]);
         projection.FindRow(new TreeViewRowKey<string>(shared, 2)).Should().BeNull();
     }
@@ -269,7 +246,7 @@ public class TreeViewProjectionTests
         var projection = new TreeViewProjection<string>();
         projection.Rebuild([root], [], StringComparer.Ordinal);
 
-        var selected = projection.ToggleSubtreeSelection(projection.Find(target)!, [], true);
+        var selected = projection.ToggleSubtreeSelection(projection.Rows.Single(row => ReferenceEquals(row.Item, target)), [], true);
 
         selected.Should().BeEquivalentTo(["Root", "Parent", "Target", "Leaf"]);
         root.Selected.Should().BeTrue();
@@ -278,7 +255,7 @@ public class TreeViewProjectionTests
         structuralNode.Selected.Should().BeFalse();
         leaf.Selected.Should().BeTrue();
 
-        var deselected = projection.ToggleSubtreeSelection(projection.Find(target)!, selected, true);
+        var deselected = projection.ToggleSubtreeSelection(projection.Rows.Single(row => ReferenceEquals(row.Item, target)), selected, true);
 
         deselected.Should().BeEmpty();
         root.Selected.Should().BeFalse();

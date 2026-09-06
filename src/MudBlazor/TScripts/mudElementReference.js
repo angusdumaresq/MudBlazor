@@ -50,20 +50,6 @@ class MudElementReference {
     }
 
     /**
-     * Moves focus to the provided element unless a tab stop inside it already has focus.
-     * Used by containers which manage a virtual cursor: clicking their own chrome (which is not a tab stop) returns focus
-     * to the container, while an input or button rendered inside them keeps the focus it just received.
-     */
-    focusUnlessDescendantFocused(element) {
-        if (!element)
-            return;
-        const active = document.activeElement;
-        if (active && active !== element && element.contains(active) && active.tabIndex >= 0)
-            return;
-        element.focus();
-    }
-
-    /**
      * Removes focus from the provided element.
      */
     blur(element) {

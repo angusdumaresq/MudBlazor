@@ -16,11 +16,6 @@ internal sealed class TreeViewItemContext<T>
     public ITreeItemData<T> Item { get; }
 
     /// <summary>
-    /// The parent row in the flattened tree.
-    /// </summary>
-    public TreeViewItemContext<T>? Parent { get; }
-
-    /// <summary>
     /// The zero-based depth of this row in the tree.
     /// </summary>
     public int Depth { get; }
@@ -34,11 +29,6 @@ internal sealed class TreeViewItemContext<T>
     /// The number of visible rows in this row's sibling set.
     /// </summary>
     public int SetSize { get; }
-
-    /// <summary>
-    /// The zero-based position of this row in the flattened visible tree.
-    /// </summary>
-    public int Index { get; }
 
     /// <summary>
     /// Whether this row has any visible direct children.
@@ -73,11 +63,9 @@ internal sealed class TreeViewItemContext<T>
     /// </summary>
     public TreeViewItemContext(
         ITreeItemData<T> item,
-        TreeViewItemContext<T>? parent,
         int depth,
         int positionInSet,
         int setSize,
-        int index,
         bool hasVisibleChildren,
         bool hasSelectableValues,
         bool isSelected,
@@ -85,11 +73,9 @@ internal sealed class TreeViewItemContext<T>
         TreeViewRowKey<T> rowKey)
     {
         Item = item;
-        Parent = parent;
         Depth = depth;
         PositionInSet = positionInSet;
         SetSize = setSize;
-        Index = index;
         HasVisibleChildren = hasVisibleChildren;
         HasSelectableValues = hasSelectableValues;
         IsSelected = isSelected;

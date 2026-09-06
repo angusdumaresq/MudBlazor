@@ -47,7 +47,6 @@ namespace MudBlazor
                 .AddClass("mud-treeview-select-none", GetExpandOnDoubleClick)
                 .AddClass("mud-treeview-item-disabled", GetDisabled())
                 .AddClass("mud-treeview-item-virtualized", IsVirtualizedItem)
-                .AddClass("mud-treeview-item-active", IsVirtualizedItem && MudTreeRoot?.IsActiveItem(CurrentItemContext!) == true)
                 .AddClass(Class)
                 .Build();
 
@@ -398,57 +397,6 @@ namespace MudBlazor
 
         private bool AreChildrenVisible() => _itemsState.Value is null || _itemsState.Value.Any(i => i.Visible);
 
-        private string? GetAriaExpanded()
-        {
-            return IsVirtualizedItem && HasChildren()
-                ? GetExpanded().ToString().ToLowerInvariant()
-                : null;
-        }
-
-        private string? GetAriaSelected()
-        {
-            return IsVirtualizedItem && !MultiSelection && CurrentItemContext!.HasSelectableValues
-                ? CurrentItemContext.IsSelected.ToString().ToLowerInvariant()
-                : null;
-        }
-
-        private string? GetAriaChecked()
-        {
-            if (!IsVirtualizedItem || !MultiSelection || !CurrentItemContext!.HasSelectableValues)
-            {
-                return null;
-            }
-
-            var state = MudTreeRoot?.TriState == true
-                ? GetCheckBoxStateTriState()
-                : IsSelected();
-
-            return state.HasValue
-                ? state.Value.ToString().ToLowerInvariant()
-                : "mixed";
-        }
-
-        /// <summary>
-        /// Builds the attributes of the row element.
-        /// </summary>
-        /// <remarks>
-        /// A virtualized row owns its <c>id</c>, which the tree references through <c>aria-activedescendant</c>.
-        /// Every other caller-supplied attribute is preserved.
-        /// </remarks>
-        private IReadOnlyDictionary<string, object?> GetItemAttributes()
-        {
-            if (!IsVirtualizedItem || MudTreeRoot is null)
-            {
-                return UserAttributes;
-            }
-
-            var attributes = new Dictionary<string, object?>(UserAttributes, StringComparer.OrdinalIgnoreCase)
-            {
-                ["id"] = MudTreeRoot.GetItemElementId(CurrentItemContext!)
-            };
-            return attributes;
-        }
-
         private IReadOnlyCollection<ITreeItemData<T>> GetItems()
         {
             if (IsVirtualizedItem)
@@ -625,7 +573,6 @@ namespace MudBlazor
             {
                 return;
             }
-            await NotifyPointerInteractionAsync();
             await MudTreeRoot.OnItemClickAsync(this);
         }
 
@@ -643,17 +590,6 @@ namespace MudBlazor
                 }
             }
             await base.OnInitializedAsync();
-        }
-
-        /// <inheritdoc />
-        protected override async Task OnAfterRenderAsync(bool firstRender)
-        {
-            await base.OnAfterRenderAsync(firstRender);
-
-            if (IsVirtualizedItem && MudTreeRoot is not null)
-            {
-                await MudTreeRoot.OnItemRenderedAsync(this);
-            }
         }
 
         private Task OnSelectedParameterChangedAsync(ParameterChangedEventArgs<bool> arg)
@@ -692,20 +628,7 @@ namespace MudBlazor
 
         private bool GetAutoExpand() => MudTreeRoot?.AutoExpand == true;
 
-        private Task NotifyPointerInteractionAsync()
-        {
-            return IsVirtualizedItem && MudTreeRoot is not null
-                ? MudTreeRoot.OnItemPointerInteractionAsync(this)
-                : Task.CompletedTask;
-        }
-
         private async Task OnItemClickedAsync(MouseEventArgs ev)
-        {
-            await NotifyPointerInteractionAsync();
-            await ActivateAsync(ev);
-        }
-
-        private async Task ActivateAsync(MouseEventArgs ev)
         {
             // note: when both click and doubleClick are enabled, doubleClick wins
             if (HasChildren() && GetExpandOnClick() && !GetExpandOnDoubleClick())
@@ -728,7 +651,6 @@ namespace MudBlazor
 
         private async Task OnItemDoubleClickedAsync(MouseEventArgs ev)
         {
-            await NotifyPointerInteractionAsync();
             if (HasChildren() && GetExpandOnDoubleClick())
             {
                 await SetExpandedAsync(!GetExpanded());
@@ -749,7 +671,6 @@ namespace MudBlazor
 
         private async Task OnItemExpanded(bool expanded)
         {
-            await NotifyPointerInteractionAsync();
             if (GetExpanded() != expanded)
             {
                 await SetExpandedAsync(expanded);
@@ -768,29 +689,7 @@ namespace MudBlazor
             MudTreeRoot?.RefreshProjection();
         }
 
-        internal bool IsEnabled() => !GetDisabled();
-
         internal bool IsSelected() => IsVirtualizedItem ? CurrentItemContext?.IsSelected == true : _selectedState.Value;
-
-        internal bool CanExpandFromKeyboard() => HasChildren() && !GetDisabled();
-
-        internal bool IsExpanded() => GetExpanded();
-
-        internal Task SetExpandedFromKeyboardAsync(bool expanded) => SetExpandedAsync(expanded);
-
-        internal Task ActivateFromKeyboardAsync()
-        {
-            return GetDisabled()
-                ? Task.CompletedTask
-                : ActivateAsync(new MouseEventArgs());
-        }
-
-        internal Task SelectFromKeyboardAsync()
-        {
-            return !GetDisabled() && !GetReadOnly() && MudTreeRoot is not null
-                ? MudTreeRoot.OnItemClickAsync(this)
-                : Task.CompletedTask;
-        }
 
         /// <summary>
         /// Clears the children under this item.

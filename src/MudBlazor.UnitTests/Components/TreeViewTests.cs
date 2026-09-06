@@ -3,9 +3,7 @@ using AwesomeAssertions;
 using Bunit;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
-using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Extensions;
-using MudBlazor.Services;
 using MudBlazor.UnitTests.TestComponents;
 using MudBlazor.UnitTests.TestComponents.TreeView;
 using NUnit.Framework;
@@ -747,50 +745,36 @@ namespace MudBlazor.UnitTests.Components
         }
 
         /// <summary>
-        /// Verifies that a virtualized tree keeps keyboard focus on the list and exposes rows through the ARIA tree pattern.
+        /// Verifies that flattened virtualized rows expose their depth and sibling position, which the nested lists of a standard tree convey structurally.
         /// </summary>
         [Test]
         public async Task TreeViewVirtualize_DataItems_ExposesAccessibleHierarchy()
         {
             var comp = Context.Render<TreeViewVirtualizationTest>();
 
-            var tree = comp.Find("ul.mud-treeview");
-            tree.GetAttribute("role").Should().Be("tree");
-            tree.GetAttribute("tabindex").Should().Be("0");
-            tree.HasAttribute("aria-multiselectable").Should().BeFalse();
-            AssertActiveItem(comp, "Root");
-
             var root = FindTreeItem(comp, "Root");
-            root.GetAttribute("role").Should().Be("treeitem");
             root.GetAttribute("aria-level").Should().Be("1");
             root.GetAttribute("aria-posinset").Should().Be("1");
             root.GetAttribute("aria-setsize").Should().Be("2");
-            root.GetAttribute("aria-expanded").Should().Be("true");
-            root.GetAttribute("aria-selected").Should().Be("false");
-            root.HasAttribute("tabindex").Should().BeFalse();
 
             var childA = FindTreeItem(comp, "Child A");
             childA.GetAttribute("aria-level").Should().Be("2");
             childA.GetAttribute("aria-posinset").Should().Be("1");
             childA.GetAttribute("aria-setsize").Should().Be("2");
-            childA.HasAttribute("aria-expanded").Should().BeFalse();
 
             var childB = FindTreeItem(comp, "Child B");
             childB.GetAttribute("aria-level").Should().Be("2");
             childB.GetAttribute("aria-posinset").Should().Be("2");
             childB.GetAttribute("aria-setsize").Should().Be("2");
-            childB.GetAttribute("aria-expanded").Should().Be("false");
 
             await childB.QuerySelector("button.mud-treeview-item-expand-button")!.ClickAsync();
 
             comp.WaitForAssertion(() =>
             {
-                FindTreeItem(comp, "Child B").GetAttribute("aria-expanded").Should().Be("true");
                 var grandchild = FindTreeItem(comp, "Grandchild");
                 grandchild.GetAttribute("aria-level").Should().Be("3");
                 grandchild.GetAttribute("aria-posinset").Should().Be("1");
                 grandchild.GetAttribute("aria-setsize").Should().Be("1");
-                grandchild.HasAttribute("aria-expanded").Should().BeFalse();
             });
         }
 
@@ -810,314 +794,6 @@ namespace MudBlazor.UnitTests.Components
         }
 
         /// <summary>
-        /// Verifies that caller attributes cannot replace the row IDs required by aria-activedescendant, but everything else is preserved.
-        /// </summary>
-        [Test]
-        public void TreeViewVirtualize_ItemAttributes_PreserveNavigationIdentity()
-        {
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.TreeAttributes, new Dictionary<string, object>
-                {
-                    ["role"] = "list",
-                    ["aria-label"] = "Caller tree"
-                })
-                .Add(x => x.ItemAttributes, new Dictionary<string, object>
-                {
-                    ["id"] = "caller-item",
-                    ["role"] = "listitem",
-                    ["aria-level"] = "99",
-                    ["data-caller-item"] = "preserved"
-                }));
-
-            var tree = comp.Find("ul.mud-treeview");
-            tree.GetAttribute("role").Should().Be("list");
-            tree.GetAttribute("aria-label").Should().Be("Caller tree");
-            var items = comp.FindAll("li.mud-treeview-item");
-            items.Select(item => item.Id).Should().OnlyHaveUniqueItems();
-            items.Should().NotContain(item => item.Id == "caller-item");
-            items.Should().OnlyContain(item => item.GetAttribute("role") == "listitem"
-                && item.GetAttribute("aria-level") == "99"
-                && item.GetAttribute("data-caller-item") == "preserved");
-            tree.GetAttribute("aria-activedescendant").Should().Be(items[0].Id);
-        }
-
-        /// <summary>
-        /// Verifies that disposal during an interceptor reconnection removes the newly completed subscription.
-        /// </summary>
-        [Test]
-        [CancelAfter(5000)]
-        public async Task TreeViewVirtualize_KeyboardInterceptor_DisposalDuringReconnectUnsubscribes()
-        {
-            var keyInterceptorService = new GatedKeyInterceptorService();
-            Context.Services.AddScoped<IKeyInterceptorService>(_ => keyInterceptorService);
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.TreeAttributes, new Dictionary<string, object> { ["id"] = "tree-before" }));
-            keyInterceptorService.InitialOptions.TargetClass.Should().BeNull("keys are handled for the focused tree element itself");
-            keyInterceptorService.InitialOptions.IgnoreDescendantEvents.Should().BeTrue("an input or button inside a row keeps its own keys");
-            keyInterceptorService.InitialOptions.Keys.Should().OnlyContain(option => option.SubscribeDown);
-
-            var reconnectTask = comp.InvokeAsync(() => comp.SetParametersAndRenderAsync(parameters => parameters
-                .Add(x => x.TreeAttributes, new Dictionary<string, object> { ["id"] = "tree-after" })));
-            await keyInterceptorService.ReconnectStarted.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
-            await comp.FindComponent<MudTreeView<string>>().Instance.DisposeAsync();
-
-            keyInterceptorService.CompleteReconnect();
-            await reconnectTask.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
-            await keyInterceptorService.ReconnectUnsubscribed.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
-
-            keyInterceptorService.UnsubscribedElementIds.Count(elementId => elementId == "tree-after").Should().Be(1);
-        }
-
-        /// <summary>
-        /// Verifies that disabling the tree while a reconnect is pending removes the obsolete subscription.
-        /// </summary>
-        [Test]
-        [CancelAfter(5000)]
-        public async Task TreeViewVirtualize_KeyboardInterceptor_DisablingDuringReconnectUnsubscribes()
-        {
-            var keyInterceptorService = new GatedKeyInterceptorService();
-            Context.Services.AddScoped<IKeyInterceptorService>(_ => keyInterceptorService);
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.TreeAttributes, new Dictionary<string, object> { ["id"] = "tree-before" }));
-
-            var reconnectTask = comp.InvokeAsync(() => comp.SetParametersAndRenderAsync(parameters => parameters
-                .Add(x => x.TreeAttributes, new Dictionary<string, object> { ["id"] = "tree-after" })));
-            await keyInterceptorService.ReconnectStarted.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
-            await comp.InvokeAsync(comp.Instance.DisableTree);
-
-            keyInterceptorService.CompleteReconnect();
-            await reconnectTask.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
-            await keyInterceptorService.ReconnectUnsubscribed.WaitAsync(NUnit.Framework.TestContext.CurrentContext.CancellationToken);
-
-            keyInterceptorService.ActiveElementIds.Should().BeEmpty();
-        }
-
-        /// <summary>
-        /// Verifies that disposing a virtualized tree removes its keyboard subscription.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_Disposal_UnsubscribesKeyboardInterceptor()
-        {
-            var keyInterceptorService = new GatedKeyInterceptorService();
-            Context.Services.AddScoped<IKeyInterceptorService>(_ => keyInterceptorService);
-            var comp = Context.Render<TreeViewVirtualizationTest>();
-            var treeId = comp.Find("ul.mud-treeview").Id;
-            keyInterceptorService.ActiveElementIds.Should().Equal(treeId);
-
-            await Context.DisposeComponentsAsync();
-
-            keyInterceptorService.UnsubscribedElementIds.Should().Contain(treeId);
-            keyInterceptorService.ActiveElementIds.Should().BeEmpty();
-        }
-
-        /// <summary>
-        /// Verifies that keyboard navigation moves the active descendant and Enter selects it.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_CanMoveToAndSelectLeafItems()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>();
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowDown");
-
-            comp.WaitForAssertion(() =>
-            {
-                AssertActiveItem(comp, "Child A");
-                comp.Instance.SelectedValue.Should().BeNull();
-            });
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "Enter");
-
-            comp.WaitForAssertion(() =>
-            {
-                comp.Instance.SelectedValue.Should().Be("Child A");
-                FindTreeItem(comp, "Child A").GetAttribute("aria-selected").Should().Be("true");
-            });
-        }
-
-        /// <summary>
-        /// Verifies that Space selects a virtualized parent without applying click expansion behavior.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_SpaceSelectsWithoutExpanding()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.SelectionMode, SelectionMode.MultiSelection)
-                .Add(x => x.RootExpanded, false)
-                .Add(x => x.ExpandOnClick, true));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, " ");
-
-            comp.WaitForAssertion(() =>
-            {
-                FindTreeItem(comp, "Root").GetAttribute("aria-expanded").Should().Be("false");
-                comp.Instance.SelectedValues.Should().BeEquivalentTo(["Root", "Child A", "Child B", "Grandchild"]);
-            });
-        }
-
-        /// <summary>
-        /// Verifies that virtualized tree navigation composes with a caller-supplied key handler.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyDown_ComposesUserHandlerWithTreeNavigation()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var receivedKeys = new List<string>();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.TreeAttributes, new Dictionary<string, object>
-                {
-                    ["onkeydown"] = EventCallback.Factory.Create<KeyboardEventArgs>(this, args => receivedKeys.Add(args.Key))
-                }));
-
-            await comp.Find("ul.mud-treeview").KeyDownAsync(new KeyboardEventArgs { Key = "ArrowDown" });
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowDown");
-
-            receivedKeys.Should().Equal("ArrowDown");
-            AssertActiveItem(comp, "Child A");
-        }
-
-        /// <summary>
-        /// Verifies that ArrowRight and ArrowLeft expand, enter, leave, and collapse virtualized branches.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_ExpandsAndCollapsesBranches()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>();
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowDown");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowDown");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowRight");
-
-            comp.WaitForAssertion(() =>
-            {
-                FindTreeItem(comp, "Child B").GetAttribute("aria-expanded").Should().Be("true");
-                AssertActiveItem(comp, "Child B");
-            });
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowRight");
-
-            comp.WaitForAssertion(() => AssertActiveItem(comp, "Grandchild"));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowLeft");
-
-            comp.WaitForAssertion(() => AssertActiveItem(comp, "Child B"));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowLeft");
-
-            comp.WaitForAssertion(() =>
-            {
-                FindTreeItem(comp, "Child B").GetAttribute("aria-expanded").Should().Be("false");
-                comp.FindAll("li.mud-treeview-item").Should().NotContain(x => x.TextContent.Contains("Grandchild", StringComparison.Ordinal));
-                AssertActiveItem(comp, "Child B");
-            });
-        }
-
-        /// <summary>
-        /// Verifies that ArrowRight enters an already-expanded disabled branch without mutating expansion.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_ArrowRightEntersDisabledExpandedBranch()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.DisabledItemValue, "Root"));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowRight");
-
-            comp.WaitForAssertion(() =>
-            {
-                FindTreeItem(comp, "Root").GetAttribute("aria-expanded").Should().Be("true");
-                AssertActiveItem(comp, "Child A");
-            });
-        }
-
-        /// <summary>
-        /// Verifies that ArrowRight scrolls to the off-screen first child of an already-expanded disabled branch.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_ArrowRightEntersOffscreenDisabledExpandedBranch()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.Height, "40px")
-                .Add(x => x.ItemSize, 40f)
-                .Add(x => x.OverscanCount, 0)
-                .Add(x => x.MaxItemCount, 1)
-                .Add(x => x.DisabledItemValue, "Root"));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowRight");
-
-            GetScrollTargets(comp).Should().Equal(1);
-            comp.Find("ul.mud-treeview").GetAttribute("aria-activedescendant").Should().EndWith("_item_1");
-            await SetVirtualizedWindowAsync(comp, beforeSpacer: true, spacerSize: 40, spacerSeparation: 40, containerSize: 40);
-            AssertActiveItem(comp, "Child A");
-        }
-
-        /// <summary>
-        /// Verifies that removing the active row moves the active descendant to the row which took its place, without moving browser focus.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_ActiveItem_RemovedRowHandsOverToNearestRow()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>();
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowDown");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "Enter");
-            var focusCount = CountFocusInvocations();
-
-            await comp.InvokeAsync(comp.Instance.RemoveChildA);
-
-            comp.WaitForAssertion(() => AssertActiveItem(comp, "Child B"));
-            comp.Instance.SelectedValue.Should().BeNull("a selected value whose item was removed is cleared");
-            CountFocusInvocations().Should().Be(focusCount);
-        }
-
-        /// <summary>
-        /// Verifies that collapsing the parent of the active row hands the active descendant to that parent.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_ActiveItem_CollapsedRowHandsOverToVisibleAncestor()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>();
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "End");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowUp");
-            AssertActiveItem(comp, "Child B");
-
-            await comp.InvokeAsync(comp.Instance.CollapseRootExternally);
-
-            AssertActiveItem(comp, "Root");
-            comp.FindAll("li.mud-treeview-item").Should().HaveCount(2);
-        }
-
-        /// <summary>
-        /// Verifies that moving the active row under a collapsed parent hands the active descendant to the row at its previous position.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_ActiveItem_ReparentedUnderCollapsedRowHandsOverToNearestRow()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>();
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowRight");
-            AssertActiveItem(comp, "Child A");
-
-            await comp.InvokeAsync(comp.Instance.ReparentChildAUnderCollapsedChildB);
-
-            AssertActiveItem(comp, "Child B");
-
-            await comp.InvokeAsync(comp.Instance.ExpandChildBExternally);
-
-            AssertActiveItem(comp, "Child B");
-            FindTreeItem(comp, "Child A").GetAttribute("aria-level").Should().Be("3");
-        }
-
-        /// <summary>
         /// Verifies that repeated references to one backing item render distinct rows without failing.
         /// </summary>
         [Test]
@@ -1127,206 +803,11 @@ namespace MudBlazor.UnitTests.Components
                 .Add(x => x.DuplicateSharedItem, true));
             var sharedRows = FindTreeItems(comp, "Shared");
             sharedRows.Should().HaveCount(2);
-            sharedRows.Select(row => row.Id).Should().OnlyHaveUniqueItems();
 
             await sharedRows[1].QuerySelector("div.mud-treeview-item-content")!.ClickAsync();
 
             comp.Instance.SelectedValue.Should().Be("Shared");
-            FindTreeItems(comp, "Shared").Should().OnlyContain(row => row.GetAttribute("aria-selected") == "true");
-            comp.FindAll("li.mud-treeview-item-active").Should().ContainSingle();
-        }
-
-        /// <summary>
-        /// Verifies that an off-screen active row is scrolled to again when rows inserted before it shift its position.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_OffscreenTargetIsRescrolledAfterRowsShift()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.DeepTreeDepth, 10)
-                .Add(x => x.Height, "40px")
-                .Add(x => x.ItemSize, 40f)
-                .Add(x => x.OverscanCount, 0)
-                .Add(x => x.MaxItemCount, 1));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "End");
-            GetScrollTargets(comp).Should().Equal(9);
-
-            await comp.InvokeAsync(comp.Instance.InsertBeforeDeepTree);
-
-            GetScrollTargets(comp).Last().Should().Be(10);
-            await SetVirtualizedWindowAsync(comp, beforeSpacer: true, spacerSize: 400, spacerSeparation: 40, containerSize: 40);
-            AssertActiveItem(comp, "Node 9");
-        }
-
-        /// <summary>
-        /// Verifies that a newer keyboard command supersedes pending off-screen navigation.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_NewerCommandSupersedesPendingNavigation()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.DeepTreeDepth, 10)
-                .Add(x => x.Height, "40px")
-                .Add(x => x.ItemSize, 40f)
-                .Add(x => x.OverscanCount, 0)
-                .Add(x => x.MaxItemCount, 1));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "End");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "Home");
-
-            GetScrollTargets(comp).Should().Equal(9, 0);
-            AssertActiveItem(comp, "Node 0");
-            await SetVirtualizedWindowAsync(comp, beforeSpacer: true, spacerSize: 360, spacerSeparation: 40, containerSize: 40);
-            comp.Find("ul.mud-treeview").GetAttribute("aria-activedescendant").Should().EndWith("_item_0");
-        }
-
-        /// <summary>
-        /// Verifies that a pointer interaction supersedes pending off-screen navigation.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_PointerInteraction_SupersedesPendingNavigation()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.DeepTreeDepth, 10)
-                .Add(x => x.Height, "80px")
-                .Add(x => x.ItemSize, 40f)
-                .Add(x => x.OverscanCount, 0)
-                .Add(x => x.MaxItemCount, 2));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "End");
-            await FindTreeItem(comp, "Node 1").QuerySelector("div.mud-treeview-item-content")!.ClickAsync();
-
-            GetScrollTargets(comp).Should().Equal(9);
-            AssertActiveItem(comp, "Node 1");
-            await SetVirtualizedWindowAsync(comp, beforeSpacer: true, spacerSize: 320, spacerSeparation: 80, containerSize: 80);
-            comp.Find("ul.mud-treeview").GetAttribute("aria-activedescendant").Should().EndWith("_item_1");
-            comp.Instance.SelectedValue.Should().Be("Node 1");
-        }
-
-        /// <summary>
-        /// Verifies that keyboard activation of an off-screen row runs once the row renders.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardActivation_RunsWhenOffscreenTargetRenders()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.DeepTreeDepth, 10)
-                .Add(x => x.Height, "40px")
-                .Add(x => x.ItemSize, 40f)
-                .Add(x => x.OverscanCount, 0)
-                .Add(x => x.MaxItemCount, 1));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "End");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "Enter");
-            comp.Instance.SelectedValue.Should().BeNull();
-
-            await SetVirtualizedWindowAsync(comp, beforeSpacer: true, spacerSize: 360, spacerSeparation: 40, containerSize: 40);
-
-            comp.WaitForAssertion(() =>
-            {
-                comp.Instance.SelectedValue.Should().Be("Node 9");
-                FindTreeItem(comp, "Node 9").GetAttribute("aria-selected").Should().Be("true");
-            });
-        }
-
-        /// <summary>
-        /// Verifies that a newer command cancels keyboard activation which is waiting for an off-screen row.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardActivation_IsCancelledByNewerCommand()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.DeepTreeDepth, 10)
-                .Add(x => x.Height, "40px")
-                .Add(x => x.ItemSize, 40f)
-                .Add(x => x.OverscanCount, 0)
-                .Add(x => x.MaxItemCount, 1));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "End");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "Enter");
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "Home");
-
-            await SetVirtualizedWindowAsync(comp, beforeSpacer: true, spacerSize: 360, spacerSeparation: 40, containerSize: 40);
-
-            comp.Instance.SelectedValue.Should().BeNull();
-            FindTreeItem(comp, "Node 9").GetAttribute("aria-selected").Should().Be("false");
-        }
-
-        /// <summary>
-        /// Verifies that Home and End move the active descendant to the visible boundaries.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_KeyboardNavigation_HomeAndEndMoveToBoundaries()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>();
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "End");
-
-            comp.WaitForAssertion(() => AssertActiveItem(comp, "Other"));
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "Home");
-
-            comp.WaitForAssertion(() => AssertActiveItem(comp, "Root"));
-        }
-
-        /// <summary>
-        /// Verifies that the selected row becomes the initial active descendant even when every row is disabled.
-        /// </summary>
-        [Test]
-        public void TreeViewVirtualize_ActiveItem_DefaultsToSelectedRowEvenWhenDisabled()
-        {
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.UseTextOnlyValues, true)
-                .Add(x => x.AutoExpand, true)
-                .Add(x => x.SelectedValue, "Grandchild")
-                .Add(x => x.DisabledItemValues, [""]));
-
-            comp.Find("ul.mud-treeview").GetAttribute("tabindex").Should().Be("0");
-            AssertActiveItem(comp, "Grandchild");
-            FindTreeItem(comp, "Grandchild").GetAttribute("aria-disabled").Should().Be("true");
-        }
-
-        /// <summary>
-        /// Verifies that a disabled virtualized tree is not focusable and handles no keys.
-        /// </summary>
-        [Test]
-        public async Task TreeViewVirtualize_Disabled_HasNoTabStopAndIgnoresKeys()
-        {
-            var keyInterceptorService = Context.AddKeyInterceptorService();
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters.Add(x => x.Disabled, true));
-
-            comp.Find("ul.mud-treeview").HasAttribute("tabindex").Should().BeFalse();
-            comp.Find("ul.mud-treeview").GetAttribute("aria-disabled").Should().Be("true");
-
-            await DispatchTreeKeyAsync(keyInterceptorService, comp, "ArrowDown");
-
-            AssertActiveItem(comp, "Root");
-        }
-
-        /// <summary>
-        /// Verifies that pointer interaction with a row activates it and returns keyboard focus to the tree.
-        /// </summary>
-        [Test]
-        [TestCase("Child A", "div.mud-treeview-item-content")]
-        [TestCase("Child A", "div.mud-treeview-item-checkbox")]
-        [TestCase("Child B", "button.mud-treeview-item-expand-button")]
-        public async Task TreeViewVirtualize_PointerInteraction_ActivatesRowAndFocusesTree(string itemText, string targetSelector)
-        {
-            var comp = Context.Render<TreeViewVirtualizationTest>(parameters => parameters
-                .Add(x => x.SelectionMode, SelectionMode.MultiSelection));
-            var initialFocusCount = CountFocusInvocations();
-
-            await FindTreeItem(comp, itemText).QuerySelector(targetSelector)!.ClickAsync();
-
-            CountFocusInvocations().Should().BeGreaterThan(initialFocusCount);
-            AssertActiveItem(comp, itemText);
+            FindTreeItems(comp, "Shared").Should().OnlyContain(row => row.QuerySelector("div.mud-treeview-item-content")!.ClassList.Contains("mud-treeview-item-selected"));
         }
 
         /// <summary>
@@ -1340,11 +821,7 @@ namespace MudBlazor.UnitTests.Components
 
             comp.FindComponents<MudVirtualize<TreeViewItemContext<string>>>().Should().BeEmpty();
             comp.FindAll("ul.mud-treeview-group").Should().NotBeEmpty();
-            var tree = comp.Find("ul.mud-treeview");
-            tree.HasAttribute("role").Should().BeFalse();
-            tree.HasAttribute("tabindex").Should().BeFalse();
-            tree.HasAttribute("aria-activedescendant").Should().BeFalse();
-            comp.Find("li.mud-treeview-item").HasAttribute("role").Should().BeFalse();
+            comp.Find("li.mud-treeview-item").HasAttribute("aria-level").Should().BeFalse();
         }
 
         /// <summary>
@@ -1641,13 +1118,11 @@ namespace MudBlazor.UnitTests.Components
                 .Add(x => x.SelectedValues, ["Child A"]));
 
             FindTreeItem(comp, "Root").QuerySelector(".mud-checkbox span")!.ClassList.Should().Contain("mud-checkbox-null");
-            FindTreeItem(comp, "Root").GetAttribute("aria-checked").Should().Be("mixed");
 
             await FindTreeItem(comp, "Child B").QuerySelector("div.mud-treeview-item-content")!.ClickAsync();
 
             comp.Instance.SelectedValues.Should().BeEquivalentTo(["Root", "Child A", "Child B", "Grandchild"]);
             FindTreeItem(comp, "Root").QuerySelector(".mud-checkbox span")!.ClassList.Should().Contain("mud-checkbox-true");
-            FindTreeItem(comp, "Root").GetAttribute("aria-checked").Should().Be("true");
         }
 
         /// <summary>
@@ -2074,7 +1549,6 @@ namespace MudBlazor.UnitTests.Components
             GetVirtualizedValues(comp).Should().Equal("Root");
             var virtualRootItem = comp.FindComponents<MudTreeViewItem<string>>()
                 .Single(component => ReferenceEquals(component.Instance.CurrentItemData, comp.Instance.TreeItems[0]));
-            virtualRootItem.Instance.IsExpanded().Should().BeFalse();
             virtualRootItem.FindComponent<MudTreeViewItemToggleButton>().Instance.Expanded.Should().BeFalse();
 
             await FindTreeItem(comp, "Root").QuerySelector("button.mud-treeview-item-expand-button")!.ClickAsync();
@@ -2823,15 +2297,16 @@ namespace MudBlazor.UnitTests.Components
                 .Add(x => x.AutoExpand, true)
                 .Add(x => x.SelectedValue, "Grandchild"));
 
-            comp.WaitForAssertion(() => FindTreeItem(comp, "Child B").GetAttribute("aria-expanded").Should().Be("true"));
+            var childB = FindDataItem(comp.Instance.TreeItems, "Child B");
+            comp.WaitForAssertion(() => childB.Expanded.Should().BeTrue());
 
             await FindTreeItem(comp, "Child B").QuerySelector("div.mud-treeview-item-arrow button")!.ClickAsync();
 
-            comp.WaitForAssertion(() => FindTreeItem(comp, "Child B").GetAttribute("aria-expanded").Should().Be("false"));
+            comp.WaitForAssertion(() => childB.Expanded.Should().BeFalse());
 
             await comp.InvokeAsync(comp.Instance.Rerender);
 
-            FindTreeItem(comp, "Child B").GetAttribute("aria-expanded").Should().Be("false", "the user collapsed this branch and the selection did not change");
+            childB.Expanded.Should().BeFalse("the user collapsed this branch and the selection did not change");
             GetVirtualizedValues(comp).Should().NotContain("Grandchild");
         }
 
@@ -2840,7 +2315,7 @@ namespace MudBlazor.UnitTests.Components
         /// </summary>
         /// <remarks>
         /// Without the reset, the inner items would treat themselves as virtualized rows of the outer tree: they would skip their
-        /// children, report the outer row's hierarchy, and stamp the outer row's element id on their own elements.
+        /// children and report the outer row's hierarchy.
         /// </remarks>
         [Test]
         public void TreeViewVirtualize_NestedTreeInRow_DoesNotInheritRowContext()
@@ -2850,11 +2325,8 @@ namespace MudBlazor.UnitTests.Components
             var innerItems = comp.FindAll("ul.nested-tree li.mud-treeview-item");
             innerItems.Should().HaveCountGreaterThan(0);
             innerItems.Should().OnlyContain(item => !item.ClassList.Contains("mud-treeview-item-virtualized"));
-            innerItems.Should().OnlyContain(item => item.GetAttribute("role") == null);
+            innerItems.Should().OnlyContain(item => !item.HasAttribute("aria-level"));
             innerItems.Should().Contain(item => item.TextContent.Contains("Root inner child", StringComparison.Ordinal), "the inner item renders its own children");
-
-            var ids = comp.FindAll("li.mud-treeview-item[id]").Select(item => item.Id).ToList();
-            ids.Should().OnlyHaveUniqueItems();
         }
 
         /// <summary>
@@ -2953,31 +2425,6 @@ namespace MudBlazor.UnitTests.Components
         }
 
         /// <summary>
-        /// Asserts that the tree's aria-activedescendant and active row class both point at the item with the specified text.
-        /// </summary>
-        private static void AssertActiveItem<TComponent>(IRenderedComponent<TComponent> component, string text)
-            where TComponent : IComponent
-        {
-            var item = FindTreeItem(component, text);
-            component.Find("ul.mud-treeview").GetAttribute("aria-activedescendant").Should().Be(item.Id);
-            item.ClassList.Should().Contain("mud-treeview-item-active");
-            component.FindAll("li.mud-treeview-item-active").Should().ContainSingle();
-        }
-
-        /// <summary>
-        /// Dispatches a keyboard event through the same interceptor observer used by the browser.
-        /// </summary>
-        private static Task DispatchTreeKeyAsync<TComponent>(
-            KeyInterceptorService keyInterceptorService,
-            IRenderedComponent<TComponent> component,
-            string key)
-            where TComponent : IComponent
-        {
-            var treeId = component.Find("ul.mud-treeview").Id;
-            return component.InvokeAsync(() => keyInterceptorService.OnKeyDown(treeId, new KeyboardEventArgs { Key = key }));
-        }
-
-        /// <summary>
         /// Simulates a browser virtualization callback for a specific visible window.
         /// </summary>
         private static Task SetVirtualizedWindowAsync(
@@ -2994,25 +2441,6 @@ namespace MudBlazor.UnitTests.Components
                 .Single(candidate => candidate.Name.EndsWith(methodName, StringComparison.Ordinal));
 
             return component.InvokeAsync(() => method.Invoke(virtualize, [spacerSize, spacerSeparation, containerSize]));
-        }
-
-        /// <summary>
-        /// Gets the row indices passed to the virtualized scroll helper, in order.
-        /// </summary>
-        private IReadOnlyList<int> GetScrollTargets<TComponent>(IRenderedComponent<TComponent> component)
-            where TComponent : IComponent
-        {
-            var treeId = component.Find("ul.mud-treeview").Id;
-            return Context.JSInterop.Invocations
-                .Where(invocation => invocation.Identifier == "mudScrollManager.scrollToVirtualizedItem" && Equals(invocation.Arguments[0], treeId))
-                .Select(invocation => (int)invocation.Arguments[1]!)
-                .ToList();
-        }
-
-        private int CountFocusInvocations()
-        {
-            // The tree only takes focus back when no tab stop inside a row holds it, which is decided in JS.
-            return Context.JSInterop.Invocations.Count(invocation => invocation.Identifier == "mudElementRef.focusUnlessDescendantFocused");
         }
 
         /// <summary>
@@ -3103,92 +2531,6 @@ namespace MudBlazor.UnitTests.Components
             public int VisibleReadCount { get; private set; }
 
             public void ResetProjectionReadCount() => VisibleReadCount = 0;
-        }
-
-        private sealed class GatedKeyInterceptorService : IKeyInterceptorService
-        {
-            private readonly TaskCompletionSource _reconnectStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            private readonly TaskCompletionSource _completeReconnect = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            private readonly TaskCompletionSource _reconnectUnsubscribed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            private readonly HashSet<string> _activeElementIds = [];
-            private int _subscriptionCount;
-
-            public Task ReconnectStarted => _reconnectStarted.Task;
-
-            public Task ReconnectUnsubscribed => _reconnectUnsubscribed.Task;
-
-            public KeyInterceptorOptions InitialOptions { get; private set; }
-
-            public List<string> UnsubscribedElementIds { get; } = [];
-
-            public IReadOnlyCollection<string> ActiveElementIds
-            {
-                get
-                {
-                    lock (_activeElementIds)
-                    {
-                        return _activeElementIds.ToList();
-                    }
-                }
-            }
-
-            public void CompleteReconnect()
-            {
-                _completeReconnect.TrySetResult();
-            }
-
-            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-            public Task SubscribeAsync(IKeyInterceptorObserver observer, KeyInterceptorOptions options) => Task.CompletedTask;
-
-            public async Task SubscribeAsync(string elementId, KeyInterceptorOptions options, Action<KeyMapBuilder> configure)
-            {
-                _subscriptionCount++;
-                InitialOptions ??= options;
-                if (_subscriptionCount < 2)
-                {
-                    lock (_activeElementIds)
-                    {
-                        _activeElementIds.Add(elementId);
-                    }
-                    return;
-                }
-
-                _reconnectStarted.TrySetResult();
-                await _completeReconnect.Task;
-                lock (_activeElementIds)
-                {
-                    _activeElementIds.Add(elementId);
-                }
-            }
-
-            public Task SubscribeAsync(string elementId, KeyInterceptorOptions options, IKeyDownObserver keyDown = null, IKeyUpObserver keyUp = null) => Task.CompletedTask;
-
-            public Task SubscribeAsync(string elementId, KeyInterceptorOptions options, Action<KeyboardEventArgs> keyDown = null, Action<KeyboardEventArgs> keyUp = null) => Task.CompletedTask;
-
-            public Task SubscribeAsync(string elementId, KeyInterceptorOptions options, Func<KeyboardEventArgs, Task> keyDown = null, Func<KeyboardEventArgs, Task> keyUp = null) => Task.CompletedTask;
-
-            public Task DispatchAsync(string elementId, KeyEventKind kind, KeyboardEventArgs args) => Task.CompletedTask;
-
-            public Task UpdateKeyAsync(IKeyInterceptorObserver observer, KeyOptions option) => Task.CompletedTask;
-
-            public Task UpdateKeyAsync(string elementId, KeyOptions option) => Task.CompletedTask;
-
-            public Task UnsubscribeAsync(IKeyInterceptorObserver observer) => UnsubscribeAsync(observer.ElementId);
-
-            public Task UnsubscribeAsync(string elementId)
-            {
-                UnsubscribedElementIds.Add(elementId);
-                lock (_activeElementIds)
-                {
-                    _activeElementIds.Remove(elementId);
-                }
-                if (elementId == "tree-after")
-                {
-                    _reconnectUnsubscribed.TrySetResult();
-                }
-                return Task.CompletedTask;
-            }
         }
 
     }

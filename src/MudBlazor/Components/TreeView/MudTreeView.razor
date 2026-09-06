@@ -1,14 +1,9 @@
-@namespace MudBlazor
+﻿@namespace MudBlazor
 @inherits MudComponentBase
 @typeparam T
 @attribute [CascadingTypeParameter(nameof(T))]
 
-<ul role="@(IsVirtualized ? "tree" : null)"
-    tabindex="@(IsVirtualized && !Disabled ? (int?)0 : null)"
-    aria-activedescendant="@GetActiveDescendantId()"
-    aria-multiselectable="@(IsVirtualized && MultiSelection ? "true" : null)"
-    aria-disabled="@(IsVirtualized && Disabled ? "true" : null)"
-    @attributes="UserAttributes" id="@GetEffectiveElementId()" class="@Classname" style="@Stylename" @ref="_treeElement">
+<ul @attributes="UserAttributes" class="@Classname" style="@Stylename" @ref="_treeElement">
     <CascadingValue Value="@MudTreeRoot" IsFixed="true">
         <CascadingValue Name="@MudTreeViewCascadingValues.ItemData" Value="default(ITreeItemData<T>)" IsFixed="true">
             @* A tree rendered inside a virtualized row must not inherit that row's context, or its items would render as virtualized rows of the outer tree. *@
